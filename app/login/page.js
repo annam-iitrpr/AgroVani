@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useMemo, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, BadgeCheck, Building2, ShieldCheck, UserRound, MapPin, ChevronRight, CheckCircle2, Chrome, Loader2 } from 'lucide-react'
+import { ArrowRight, BadgeCheck, Building2, ShieldCheck, UserRound, MapPin, ChevronRight, CheckCircle2, Chrome, Loader2, MessageCircle } from 'lucide-react'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 
@@ -58,6 +58,7 @@ const roleStyles = {
 export default function LoginPage() {
   const router = useRouter()
   const [activeRole, setActiveRole] = useState('farmer')
+  const [phone, setPhone] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -111,6 +112,25 @@ export default function LoginPage() {
       authProvider: 'mock',
     }
     localStorage.setItem('agrovani_user', JSON.stringify(sessionUser))
+    router.push(currentRole.redirect)
+  }
+
+  function signInWithMockWhatsApp() {
+    setError('')
+    const digits = phone.replace(/\D/g, '')
+    if (digits.length < 10) {
+      setError('Enter a 10-digit phone number for the demo WhatsApp login.')
+      return
+    }
+    setBusy(true)
+    localStorage.setItem('agrovani_user', JSON.stringify({
+      role: currentRole.key,
+      name: `${currentRole.label} WhatsApp Demo`,
+      phone: digits,
+      loginAt: new Date().toISOString(),
+      authProvider: 'mock-whatsapp',
+      otpVerified: false,
+    }))
     router.push(currentRole.redirect)
   }
 
@@ -219,6 +239,7 @@ export default function LoginPage() {
                   {!busy && <ArrowRight className="h-4 w-4" />}
                 </button>
                 {process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH === 'true' && <button type="button" onClick={signInWithMockData} disabled={busy} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"><UserRound className="h-4 w-4" /> Use local demo data</button>}
+                {process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH === 'true' && <div className="rounded-2xl border border-dashed border-green-300 bg-green-50 p-4"><div className="flex items-center gap-2 text-sm font-semibold text-green-900"><MessageCircle className="h-4 w-4" /> Demo WhatsApp login</div><p className="mt-1 text-xs leading-5 text-green-800">Local mock only. No WhatsApp message or OTP is sent.</p><div className="mt-3 flex gap-2"><input aria-label="Demo WhatsApp phone number" value={phone} onChange={(event) => setPhone(event.target.value)} inputMode="tel" placeholder="9876543210" className="h-10 min-w-0 flex-1 rounded-lg border border-green-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-green-300" /><button type="button" onClick={signInWithMockWhatsApp} disabled={busy} className="inline-flex h-10 items-center gap-1 rounded-lg bg-green-600 px-3 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-60">Continue <ArrowRight className="h-3.5 w-3.5" /></button></div></div>}
               </div>
 
               <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
