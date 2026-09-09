@@ -112,7 +112,7 @@ export default function LoginPage() {
       authProvider: 'mock',
     }
     localStorage.setItem('agrovani_user', JSON.stringify(sessionUser))
-    router.push(currentRole.redirect)
+    window.location.assign(currentRole.redirect)
   }
 
   function signInWithMockWhatsApp() {
@@ -131,7 +131,7 @@ export default function LoginPage() {
       authProvider: 'mock-whatsapp',
       otpVerified: false,
     }))
-    router.push(currentRole.redirect)
+    window.location.assign(currentRole.redirect)
   }
 
   return (
