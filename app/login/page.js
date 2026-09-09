@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useMemo, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, BadgeCheck, Building2, ShieldCheck, UserRound, Mail, MapPin, ChevronRight, CheckCircle2, Chrome, Github, Apple, Globe2, Loader2 } from 'lucide-react'
+import { ArrowRight, BadgeCheck, Building2, ShieldCheck, UserRound, MapPin, ChevronRight, CheckCircle2, Chrome, Loader2 } from 'lucide-react'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 
@@ -58,7 +58,6 @@ const roleStyles = {
 export default function LoginPage() {
   const router = useRouter()
   const [activeRole, setActiveRole] = useState('farmer')
-  const [email, setEmail] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -83,7 +82,7 @@ export default function LoginPage() {
     finishOAuthLogin().catch((authError) => setError(authError.message || 'Unable to complete sign in.'))
   }, [router])
 
-  async function signInWithProvider(provider) {
+  async function signInWithGoogle() {
     setBusy(true)
     setError('')
     const supabase = getSupabaseBrowserClient()
@@ -93,35 +92,12 @@ export default function LoginPage() {
       return
     }
     localStorage.setItem('agrovani_pending_role', currentRole.key)
-    const { error: authError } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/login` } })
+    const { error: authError } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${window.location.origin}/login` } })
     if (authError) {
       localStorage.removeItem('agrovani_pending_role')
       setBusy(false)
-      setError(authError.message || `Unable to sign in with ${provider}.`)
+      setError(authError.message || 'Unable to sign in with Google.')
     }
-  }
-
-  async function sendMagicLink(event) {
-    event.preventDefault()
-    setBusy(true)
-    setError('')
-    const trimEmail = email.trim().toLowerCase()
-    const supabase = getSupabaseBrowserClient()
-    if (!supabase) {
-      setBusy(false)
-      setError('Email sign-in is not configured. Add the Supabase URL and public anon key first.')
-      return
-    }
-    if (!trimEmail || !trimEmail.includes('@')) {
-      setBusy(false)
-      setError('Enter a Gmail or other email address to receive a secure sign-in link.')
-      return
-    }
-    localStorage.setItem('agrovani_pending_role', currentRole.key)
-    const { error: authError } = await supabase.auth.signInWithOtp({ email: trimEmail, options: { emailRedirectTo: `${window.location.origin}/login` } })
-    setBusy(false)
-    if (authError) setError(authError.message || 'Unable to send the sign-in link.')
-    else setError('Check your email for the secure sign-in link.')
   }
 
   return (
@@ -221,42 +197,14 @@ export default function LoginPage() {
               </div>
 
               <div className="mt-8 space-y-3">
-                <p className="text-sm text-slate-600">Use your Gmail or another enabled identity provider. No portal password is required.</p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <button type="button" onClick={() => signInWithProvider('google')} disabled={busy} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"><Chrome className="h-4 w-4 text-red-500" /> Continue with Google</button>
-                  <button type="button" onClick={() => signInWithProvider('azure')} disabled={busy} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"><Globe2 className="h-4 w-4 text-blue-600" /> Microsoft</button>
-                  <button type="button" onClick={() => signInWithProvider('github')} disabled={busy} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"><Github className="h-4 w-4" /> GitHub</button>
-                  <button type="button" onClick={() => signInWithProvider('apple')} disabled={busy} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"><Apple className="h-4 w-4" /> Apple</button>
-                </div>
-              </div>
-
-              <form onSubmit={sendMagicLink} className="mt-6 space-y-5">
-                <div className="space-y-2">
-                  <label htmlFor="email" className="text-sm font-semibold text-slate-700">Email magic link</label>
-                  <div className="relative">
-                    <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-200"
-                      placeholder="you@gmail.com"
-                    />
-                  </div>
-                </div>
-
+                <p className="text-sm text-slate-600">Sign in securely with your Gmail account. No AgroVani password is required.</p>
                 {error && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${roleStyles[currentRole.key].bg} font-semibold text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-70`}
-                >
-                  {busy ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending secure link...</> : `Email me a sign-in link`}
-                  <ArrowRight className="h-4 w-4" />
+                <button type="button" onClick={signInWithGoogle} disabled={busy} className={`mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${roleStyles[currentRole.key].bg} font-semibold text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-70`}>
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Chrome className="h-4 w-4" />}
+                  {busy ? 'Opening Google sign-in...' : 'Continue with Google / Gmail'}
+                  {!busy && <ArrowRight className="h-4 w-4" />}
                 </button>
-              </form>
+              </div>
 
               <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center gap-2 text-sm text-slate-700">
@@ -264,8 +212,8 @@ export default function LoginPage() {
                   Secure agricultural operations platform for Punjab & beyond
                 </div>
                 <div className="mt-3 flex items-center gap-3 text-xs text-slate-500">
-                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">Passwordless sign-in</span>
-                  <span>Google, Microsoft, GitHub, Apple or email link</span>
+                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">Google sign-in</span>
+                  <span>Use your Gmail identity</span>
                 </div>
               </div>
             </section>
