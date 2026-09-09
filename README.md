@@ -162,6 +162,42 @@ AgroVani/
 - **Hyper-Local Accessibility (UN SDG 10):** Built from the ground up for rural usability with regional dialects (Hindi and Punjabi) and visual geospatial mappings.
 - **Production-Ready Foundation:** Clean Next.js 14 architecture with Supabase authentication, robust data models, and isolated calculation engines.
 
+## 🌦️ Farmer intelligence MVP
+
+The farmer dashboard now includes a full-India weather map with three clearly labeled source layers:
+
+- **Indian satellite:** INSAT / MOSDAC adapter label. The local preview uses a public satellite tile fallback until approved MOSDAC access is configured.
+- **Local weather:** IMD / local station adapter label.
+- **World forecast:** NOAA / GFS adapter label.
+
+The MVP also exposes these routes from the existing Next.js API dispatcher:
+
+| Route | Purpose |
+| --- | --- |
+| `POST /api/yield-prediction` | Baseline observational yield estimate, interval, confidence, risk, and estimated treatment advantage |
+| `GET /api/mandi-prices` | Commodity, state, and market filters with modal price, seven-day demo trend, MSP premium/discount, freshness, and soft signal |
+| `GET /api/msp-comparison` | Explicit MSP comparison; returns `insufficient data` when the crop or price is not known |
+| `GET /api/weather-map` | Three source-layer definitions, map center, and freshness timestamp |
+| `POST /api/report?format=html` | One-page printable report that can be saved as PDF from the browser print dialog |
+| `POST /api/whatsapp-share` | Short forward-safe WhatsApp text with disclaimers |
+
+### Data and model boundaries
+
+`lib/agro/` separates prediction, mandi, report, weather, storage, and source metadata. The local MVP store is SQLite at `.data/agrovani.sqlite` (override with `AGROVANI_DATA_DIR`) and is seeded with clearly labeled demo rows. Connect only approved official adapters through the variables in `.env.example`; when market data is absent or stale, the UI displays **insufficient data** instead of guessing.
+
+Yield output is a baseline regression-style placeholder with an uncertainty interval. It is not trained yet, so the API labels it `modelStatus: not trained`. Treatment advantage is an observational estimate, not causal proof. Backtest fields for MAE, RMSE, and calibration error are returned as null until training data and a backtest job are connected. Feature influence, if added later, must not be described as causal evidence.
+
+### Codespaces setup
+
+```bash
+cp .env.example .env.local
+npm install
+npm test
+npm run dev
+```
+
+Open `http://localhost:3000/farmer/dashboard`. The demo data works without API keys. Add only approved source endpoints and credentials to `.env.local` before presenting a layer as live.
+
 ---
 
 ## 👥 Contributors:

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import React from 'react'
 import Link from 'next/link'
 import FarmMapCard from '@/components/farmer/FarmMapCard'
+import AgroInsights from '@/components/farmer/AgroInsights'
 import BookMachineryCard from '@/components/farmer/BookMachineryCard'
 import LiveKitVoiceAgent from '@/components/farmer/LiveKitVoiceAgent'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
@@ -381,6 +382,13 @@ export default function App() {
             </div>
           )}
 
+          <div className="mb-6 flex flex-col gap-4 rounded-[28px] border border-white/70 bg-white/65 p-5 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
+            <div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-sky-700">Weather desk</p><h2 className="mt-1 text-xl font-semibold text-slate-900">Map, forecast and weather-wise advice</h2><p className="mt-1 text-sm text-slate-600">Open the dedicated weather workspace for all three source layers.</p></div>
+            <Link href="/weather" className="pill-dark whitespace-nowrap">Open weather desk</Link>
+          </div>
+
+          <div className="mb-6"><AgroInsights farm={farm} /></div>
+
           {tab === 'residue' && (
             <div className="grid gap-6 lg:grid-cols-3">
               <div className="glass-card card-3d">
@@ -435,7 +443,7 @@ export default function App() {
                 <p className="text-lg font-semibold">{copy.roi}: {diag?.economics?.roiPercent != null ? `${diag.economics.roiPercent}%` : '—'}</p>
                 <span className="hidden h-6 w-px bg-white/40 sm:block" />
                 <p className="text-lg font-semibold">{copy.grossReturn}: ₹{diag?.economics?.netReturn?.toLocaleString('en-IN') || '—'}</p>
-                <span className="ml-auto rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm">Causal ROI attribution</span>
+                <span className="ml-auto rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm">Model estimate · not causal proof</span>
               </div>
 
               <div className="glass-card">

@@ -8,6 +8,10 @@ import { computeStressDiagnostic, computeFarmEconomics, CROP_LIST, PRODUCT_CATAL
 import { computeResidue, computeFieldReadiness, DISTRICT_DATA, getDistrictData } from '@/lib/calculations/residueRecommendation'
 import { buildGeminiVisionPrompt, parseGeminiResponse, mapSymptomsToRecommendation } from '@/lib/ai/gemini'
 import { createSupabaseDb, getSupabaseServerClient } from '@/lib/supabase/server'
+import { predictYield } from '@/lib/agro/prediction'
+import { compareMsp, lookupMandiPrices, softSellSignal } from '@/lib/agro/mandi'
+import { createReport, createWhatsAppText, reportHtml } from '@/lib/agro/report'
+import { getWeatherMap } from '@/lib/agro/weather'
 
 let client
 let db
@@ -343,6 +347,35 @@ async function handleRoute(request, { params }) {
   const { searchParams } = new URL(request.url)
 
   try {
+    if (route === '/yield-prediction' && method === 'POST') {
+      const body = await request.json()
+      return ok(predictYield(body))
+    }
+
+    if (route === '/mandi-prices' && method === 'GET') {
+      const result = lookupMandiPrices({ commodity: searchParams.get('commodity'), state: searchParams.get('state'), market: searchParams.get('market') })
+      return ok({ ...result, rows: result.rows.map((row) => ({ ...row, recommendation: softSellSignal(row) })) })
+    }
+
+    if (route === '/msp-comparison' && method === 'GET') {
+      return ok(compareMsp({ commodity: searchParams.get('commodity'), price: searchParams.get('price') }))
+    }
+
+    if (route === '/weather-map' && method === 'GET') {
+      return ok(getWeatherMap({ lat: searchParams.get('lat'), lon: searchParams.get('lon') }))
+    }
+
+    if (route === '/report' && method === 'POST') {
+      const body = await request.json()
+      const report = createReport(body)
+      if (searchParams.get('format') === 'html') return new NextResponse(reportHtml(report), { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+      return ok(report)
+    }
+
+    if (route === '/whatsapp-share' && method === 'POST') {
+      return ok({ text: createWhatsAppText(await request.json()) })
+    }
+
     if (route === '/livekit/token' && method === 'POST') {
       if (!process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET || !process.env.LIVEKIT_URL) {
         return ok({ error: 'LiveKit is not configured. Add LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.' }, 503)

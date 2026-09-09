@@ -1,18 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, BadgeCheck, Building2, ShieldCheck, UserRound, Lock, Mail, MapPin, ChevronRight, CheckCircle2 } from 'lucide-react'
+import { ArrowRight, BadgeCheck, Building2, ShieldCheck, UserRound, Mail, MapPin, ChevronRight, CheckCircle2, Chrome, Github, Apple, Globe2, Loader2 } from 'lucide-react'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
+import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 
 const roles = [
   {
     key: 'farmer',
     label: 'Farmer',
     accent: 'emerald',
-    username: 'farmer@agrovani.in',
-    password: 'AgroVani@123',
     redirect: '/farmer/onboarding',
     badge: 'Crop & field access',
   },
@@ -20,8 +19,6 @@ const roles = [
     key: 'seller',
     label: 'Seller',
     accent: 'amber',
-    username: 'seller@agrovani.in',
-    password: 'AgroVani@123',
     redirect: '/seller/dashboard',
     badge: 'Residue marketplace',
   },
@@ -29,8 +26,6 @@ const roles = [
     key: 'admin',
     label: 'Admin',
     accent: 'blue',
-    username: 'admin@agrovani.in',
-    password: 'AgroVani@123',
     redirect: '/admin/dashboard',
     badge: 'Monitoring & oversight',
   },
@@ -63,7 +58,7 @@ const roleStyles = {
 export default function LoginPage() {
   const router = useRouter()
   const [activeRole, setActiveRole] = useState('farmer')
-  const [form, setForm] = useState({ email: 'farmer@agrovani.in', password: 'AgroVani@123' })
+  const [email, setEmail] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -72,36 +67,61 @@ export default function LoginPage() {
     [activeRole],
   )
 
-  const handleSubmit = (event) => {
+  useEffect(() => {
+    const finishOAuthLogin = async () => {
+      const supabase = getSupabaseBrowserClient()
+      if (!supabase) return
+      const { data } = await supabase.auth.getSession()
+      if (!data.session?.user) return
+      const savedRole = typeof window !== 'undefined' ? localStorage.getItem('agrovani_pending_role') || 'farmer' : 'farmer'
+      const role = roles.find((item) => item.key === savedRole) || roles[0]
+      const user = data.session.user
+      localStorage.setItem('agrovani_user', JSON.stringify({ role: role.key, name: user.user_metadata?.full_name || user.email?.split('@')[0] || role.label, email: user.email, loginAt: new Date().toISOString(), authProvider: user.app_metadata?.provider || 'email' }))
+      localStorage.removeItem('agrovani_pending_role')
+      router.replace(role.redirect)
+    }
+    finishOAuthLogin().catch((authError) => setError(authError.message || 'Unable to complete sign in.'))
+  }, [router])
+
+  async function signInWithProvider(provider) {
+    setBusy(true)
+    setError('')
+    const supabase = getSupabaseBrowserClient()
+    if (!supabase) {
+      setBusy(false)
+      setError('Identity sign-in is not configured. Add the Supabase URL and public anon key, then enable the provider in Supabase.')
+      return
+    }
+    localStorage.setItem('agrovani_pending_role', currentRole.key)
+    const { error: authError } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: `${window.location.origin}/login` } })
+    if (authError) {
+      localStorage.removeItem('agrovani_pending_role')
+      setBusy(false)
+      setError(authError.message || `Unable to sign in with ${provider}.`)
+    }
+  }
+
+  async function sendMagicLink(event) {
     event.preventDefault()
     setBusy(true)
     setError('')
-
-    const trimEmail = form.email.trim().toLowerCase()
-    const trimPassword = form.password.trim()
-
-    const valid = trimEmail === currentRole.username.toLowerCase() && trimPassword === currentRole.password
-
-    if (!valid) {
+    const trimEmail = email.trim().toLowerCase()
+    const supabase = getSupabaseBrowserClient()
+    if (!supabase) {
       setBusy(false)
-      setError('Invalid credentials. Please use the correct username and password for this role.')
+      setError('Email sign-in is not configured. Add the Supabase URL and public anon key first.')
       return
     }
-
-    const sessionUser = {
-      role: currentRole.key,
-      name: currentRole.label,
-      email: trimEmail,
-      loginAt: new Date().toISOString(),
+    if (!trimEmail || !trimEmail.includes('@')) {
+      setBusy(false)
+      setError('Enter a Gmail or other email address to receive a secure sign-in link.')
+      return
     }
-
-    localStorage.setItem('agrovani_user', JSON.stringify(sessionUser))
-    router.push(currentRole.redirect)
+    localStorage.setItem('agrovani_pending_role', currentRole.key)
+    const { error: authError } = await supabase.auth.signInWithOtp({ email: trimEmail, options: { emailRedirectTo: `${window.location.origin}/login` } })
     setBusy(false)
-  }
-
-  const setInput = (field) => (event) => {
-    setForm((prev) => ({ ...prev, [field]: event.target.value }))
+    if (authError) setError(authError.message || 'Unable to send the sign-in link.')
+    else setError('Check your email for the secure sign-in link.')
   }
 
   return (
@@ -188,10 +208,6 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => {
                       setActiveRole(role.key)
-                      setForm({
-                        email: role.username,
-                        password: role.password,
-                      })
                       setError('')
                     }}
                     className={`rounded-2xl border p-3 text-left transition ${activeRole === role.key ? `border-${role.key === 'farmer' ? 'emerald' : role.key === 'seller' ? 'amber' : 'blue'}-300 bg-${role.key === 'farmer' ? 'emerald' : role.key === 'seller' ? 'amber' : 'blue'}-50 shadow-sm` : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}
@@ -204,53 +220,40 @@ export default function LoginPage() {
                 ))}
               </div>
 
-              <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+              <div className="mt-8 space-y-3">
+                <p className="text-sm text-slate-600">Use your Gmail or another enabled identity provider. No portal password is required.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button type="button" onClick={() => signInWithProvider('google')} disabled={busy} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"><Chrome className="h-4 w-4 text-red-500" /> Continue with Google</button>
+                  <button type="button" onClick={() => signInWithProvider('azure')} disabled={busy} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"><Globe2 className="h-4 w-4 text-blue-600" /> Microsoft</button>
+                  <button type="button" onClick={() => signInWithProvider('github')} disabled={busy} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"><Github className="h-4 w-4" /> GitHub</button>
+                  <button type="button" onClick={() => signInWithProvider('apple')} disabled={busy} className="flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"><Apple className="h-4 w-4" /> Apple</button>
+                </div>
+              </div>
+
+              <form onSubmit={sendMagicLink} className="mt-6 space-y-5">
                 <div className="space-y-2">
-                  <label htmlFor="email" className="text-sm font-semibold text-slate-700">Email / Username</label>
+                  <label htmlFor="email" className="text-sm font-semibold text-slate-700">Email magic link</label>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
                       id="email"
-                      type="text"
-                      value={form.email}
-                      onChange={setInput('email')}
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
                       className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-200"
-                      placeholder="Enter your email or username"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label htmlFor="password" className="text-sm font-semibold text-slate-700">Password</label>
-                  <div className="relative">
-                    <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      id="password"
-                      type="password"
-                      value={form.password}
-                      onChange={setInput('password')}
-                      className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-200"
-                      placeholder="Enter your password"
+                      placeholder="you@gmail.com"
                     />
                   </div>
                 </div>
 
                 {error && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-                <div className="flex items-center justify-between text-sm">
-                  <label className="flex items-center gap-2 text-slate-600">
-                    <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
-                    Keep me signed in
-                  </label>
-                  <button type="button" className="font-medium text-slate-600 transition hover:text-slate-900">Need help?</button>
-                </div>
-
                 <button
                   type="submit"
                   disabled={busy}
                   className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r ${roleStyles[currentRole.key].bg} font-semibold text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-70`}
                 >
-                  {busy ? 'Signing in...' : `Sign in as ${currentRole.label}`}
+                  {busy ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending secure link...</> : `Email me a sign-in link`}
                   <ArrowRight className="h-4 w-4" />
                 </button>
               </form>
@@ -261,8 +264,8 @@ export default function LoginPage() {
                   Secure agricultural operations platform for Punjab & beyond
                 </div>
                 <div className="mt-3 flex items-center gap-3 text-xs text-slate-500">
-                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">Demo credentials</span>
-                  <span>Farmer, Seller, Admin roles</span>
+                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">Passwordless sign-in</span>
+                  <span>Google, Microsoft, GitHub, Apple or email link</span>
                 </div>
               </div>
             </section>
