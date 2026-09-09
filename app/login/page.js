@@ -100,6 +100,20 @@ export default function LoginPage() {
     }
   }
 
+  function signInWithMockData() {
+    setBusy(true)
+    setError('')
+    const sessionUser = {
+      role: currentRole.key,
+      name: `${currentRole.label} Demo User`,
+      email: `demo.${currentRole.key}@agrovani.local`,
+      loginAt: new Date().toISOString(),
+      authProvider: 'mock',
+    }
+    localStorage.setItem('agrovani_user', JSON.stringify(sessionUser))
+    router.push(currentRole.redirect)
+  }
+
   return (
     <main className="page-onboarding min-h-screen text-slate-800">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -204,6 +218,7 @@ export default function LoginPage() {
                   {busy ? 'Opening Google sign-in...' : 'Continue with Google / Gmail'}
                   {!busy && <ArrowRight className="h-4 w-4" />}
                 </button>
+                {process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH === 'true' && <button type="button" onClick={signInWithMockData} disabled={busy} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-60"><UserRound className="h-4 w-4" /> Use local demo data</button>}
               </div>
 
               <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
