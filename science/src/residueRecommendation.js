@@ -28,21 +28,45 @@ const RESIDUE_FACTORS = {
   Cotton: 1.2,
 }
 
-export function computeResidue({ areaInAcres, district, cropType = 'Rice', districtData }) {
+export function computeResidue({
+  areaInAcres,
+  district,
+  cropType = 'Rice',
+  districtData,
+  predictedYieldPerHectare,
+}) {
   const area = Math.max(0, Number(areaInAcres) || 0);
   const d = districtData || getDistrictData(district);
+
   const perAcre = RESIDUE_FACTORS[cropType] || RESIDUE_FACTORS.Rice;
-  const residueTons = +(area * perAcre).toFixed(2);
+
+  // Convert farmer's acreage to hectares because CropCast predicts yield in t/ha
+  const areaInHectares = area * 0.40468564224;
+
+  // ML-predicted crop production
+  const predictedYield = Number(predictedYieldPerHectare) || 0;
+  const cropProductionTons = areaInHectares * predictedYield;
+
+  // Estimate residue from crop production
+  const residueTons = +(cropProductionTons * perAcre).toFixed(2);
+
   const totalValueINR = Math.round(residueTons * d.rate);
+
   return {
     district,
     state: d.state,
     cropType,
+    areaInAcres: area,
+    areaInHectares: +areaInHectares.toFixed(2),
+    predictedYieldPerHectare: +predictedYield.toFixed(2),
+    cropProductionTons: +cropProductionTons.toFixed(2),
     residueTons,
-    perAcre,
+    residueFactor: perAcre,
     marketRate: d.rate,
     totalValueINR,
-    dataSource: districtData ? 'district market metric plus farmer field inputs' : 'market-rate estimate plus farmer field inputs',
+    dataSource: districtData
+      ? 'CropCast ML yield prediction plus district market metric'
+      : 'CropCast ML yield prediction plus market-rate estimate',
   };
 }
 
