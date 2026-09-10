@@ -101,7 +101,7 @@
 | **Database & Auth** | [Supabase](https://supabase.com/) (PostgreSQL with Row Level Security) |
 | **Maps & Geospatial** | [Leaflet](https://leafletjs.com/) / React-Leaflet |
 | **Internationalization** | Custom Context-driven i18n (`lib/i18n`) supporting EN, HI, PA |
-| **Weather & External Data** | Dedicated API adapters (`lib/adapters/weather.js`, `cehub.js`) |
+| **Weather & External Data** | Dedicated server API adapters (`lib/server/adapters/weather.js`, `cehub.js`) |
 | **Testing & Quality** | Pytest-backed test runs & test ID instrumentation (`lib/constants/testIds`) |
 | **Deployment** | [Vercel](https://vercel.com/) |
 
@@ -114,8 +114,8 @@ The Live Voice Advisory card uses the Next.js app for room tokens and the Python
 npm run dev
 
 # Terminal 2
-python -m pip install -r agent/requirements.txt
-python agent/agent.py dev
+python -m pip install -r services/voice-agent/requirements.txt
+python services/voice-agent/agent.py dev
 ```
 
 Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and `GEMINI_API_KEY` in `.env` or `.env.local`. The worker maps `GEMINI_API_KEY` to `GOOGLE_API_KEY` automatically.
@@ -126,31 +126,35 @@ Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and `GEMINI_API_KEY`
 
 ```bash
 AgroVani/
-├── app/
+├── web/
+│   ├── app/                   # Next.js routes and API compatibility layer
 │   ├── admin/dashboard/       # Admin analytics & monitoring
 │   ├── api/[[...path]]/       # Unified API routing layer
 │   ├── farmer/
 │   │   ├── dashboard/         # Farmer core dashboard
+│   │   ├── advisory/           # Yield, mandi, MSP and report dashboard
 │   │   └── onboarding/        # Guided profile & field setup
 │   ├── seller/dashboard/      # Machinery inventory & bookings
 │   ├── login/                 # Role-based authentication
 │   ├── layout.js              # Root layout & providers
 │   └── page.js                # Landing page
-├── components/
+│   ├── src/components/        # Reusable frontend components and UI primitives
 │   ├── farmer/                # FarmMapCard, BookMachineryCard, LeafletMap
 │   ├── ui/                    # Shadcn/Radix atomic components
 │   └── LanguageSwitcher.js    # Multi-language selector
-├── lib/
-│   ├── adapters/              # Weather and CEHub data integration
-│   ├── calculations/          # Crop & stubble residue algorithms
-│   ├── constants/             # Test IDs and application constants
-│   ├── i18n/                  # Language dictionaries (en, hi, pa)
-│   ├── supabase/              # Browser & server Supabase clients
-│   └── utils.js               # Common utilities
-├── supabase/
-│   └── schema.sql             # Relational schemas, indices & RLS policies
+├── backend/
+│   ├── src/                   # API services, adapters, database, and AI
+│   ├── data/                  # Backend-owned schemas and reference data
+│   └── supabase/              # Database schema ownership
+├── contracts/src/             # Shared request/response validation
+├── science/src/               # Pure agricultural calculations
+├── services/                  # Location, yield-model, and voice-agent runtimes
+├── shared/                    # Cross-runtime utilities
+├── infra/                     # Infrastructure assets
+├── scripts/                   # Operational scripts
+├── workstreams/               # Project workstream material
 ├── vercel.json                # Vercel deployment configuration
-└── next.config.js             # Next.js build configuration
+└── package.json               # Workspace commands and dependencies
 ```
 
 ---
@@ -168,3 +172,26 @@ AgroVani/
 Debayan Paul, Annesha Chakraborty, Ayan Chatterjee and Nikita Bose
 
 Built with passion for sustainable agriculture and rural empowerment.
+
+## Farmer Advisory MVP
+
+Open `/farmer/advisory` for the mobile-friendly yield and mandi dashboard.
+The API routes are:
+
+- `POST /api/yield-prediction`: observational baseline, range, confidence, uncertainty risk, and estimated treatment advantage.
+- `GET /api/mandi`: commodity, state, and market filters with latest modal price, seven-day rows, source, and freshness.
+- `GET /api/msp`: premium/discount versus the configured MSP record and a soft signal.
+- `POST /api/report/pdf`: one-page printable PDF summary.
+- `POST /api/report/whatsapp`: short forwardable farmer-group message.
+
+The seeded mandi rows in `backend/data/mandiDemo.js` are demo records shaped like Agmarknet data and are explicitly marked non-official. They must be replaced by verified Agmarknet/Agmarknet 2.0 records before production use. Missing or stale values are returned as `insufficient data`; the UI never guesses.
+
+### Codespaces setup
+
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+The MVP uses the existing Mongo/Supabase persistence boundary for farm records and keeps advisory seed data isolated in `backend/data` and `web/src/lib/data`. Set `ADVISORY_DB_PATH` when connecting a SQLite adapter for deployment; the service layer is storage-independent so that adapter can be enabled without changing the UI or API contract. No model training dependency is required: the current baseline is clearly labeled and includes MAE, RMSE, and calibration-error helpers for backtesting once historical observations are available.
