@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
 import { AccessToken } from 'livekit-server-sdk'
 import { fetchWeather } from '@/lib/adapters/weather'
+import { predictCropYield } from '@/lib/adapters/cropCast'
 import { fetchSprayWindow, fetchHydricStress, geocodeLocation } from '@/lib/adapters/cehub'
 import { computeStressDiagnostic, computeFarmEconomics, CROP_LIST, PRODUCT_CATALOG } from '@/lib/calculations/cropRecommendation'
 import { computeResidue, computeFieldReadiness, DISTRICT_DATA, getDistrictData } from '@/lib/calculations/residueRecommendation'
@@ -676,17 +677,23 @@ async function handleRoute(request, { params }) {
 
     if (route === '/residue' && method === 'GET') {
       const farmId = searchParams.get('farmId')
-      let area, district, cropType
+      let area, district, cropType, state, season, year
       if (farmId) {
         const farm = await db.collection('farms').findOne({ id: farmId })
         if (!farm) return ok({ error: 'Farm not found' }, 404)
         area = farm.areaInAcres
         district = farm.district
         cropType = farm.cropType
+        state = farm.state
+        season = farm.season || (cropType === 'Rice' ? 'Kharif' : 'Rabi')
+        year = farm.year || 2025
       } else {
         area = Number(searchParams.get('area')) || 5
         district = searchParams.get('district') || 'Patiala'
         cropType = searchParams.get('crop') || 'Rice'
+        state = searchParams.get('state') || (district === 'Patiala' || district === 'Ludhiana' ? 'Punjab' : '')
+        season = searchParams.get('season') || (cropType === 'Rice' ? 'Kharif' : 'Rabi')
+        year = Number(searchParams.get('year')) || 2025
       }
       const metric = await db.collection('district_metrics').findOne({ district })
       const machinery = await db.collection('machinery').find({ district }).limit(100).toArray()
@@ -696,7 +703,23 @@ async function handleRoute(request, { params }) {
             ...metric,
           }
         : null
-      const result = computeResidue({ areaInAcres: area, district, cropType, districtData })
+      const areaInHectares = area * 0.40468564224
+
+      const yieldPrediction = await predictCropYield({
+        state,
+        district,
+        season,
+        crop: cropType,
+        year,
+        area: areaInHectares,
+      })
+      const result = computeResidue({
+      areaInAcres: area,
+      district,
+      cropType,
+      districtData,
+      predictedYieldPerHectare: yieldPrediction.predicted_yield_per_hectare,
+      })
       const [listings, orders] = await Promise.all([
         db.collection('marketplace_listings').find({ status: 'active', category: 'Residue' }).limit(1000).toArray(),
         db.collection('marketplace_orders').find({ farmId: farmId || null, status: { $in: ['new', 'packed', 'out_for_delivery'] } }).limit(1000).toArray(),
