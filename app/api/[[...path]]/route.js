@@ -278,6 +278,94 @@ async function createGeminiAudioReply(db, body) {
   return reply ? ok({ reply }) : ok({ error: 'Gemini returned an empty voice response' }, 502)
 }
 
+async function createPlantMDDiagnosis(body) {
+  const plantmdUrl = process.env.PLANTMD_API_URL
+
+  if (!plantmdUrl) {
+    return ok({
+      error: 'PlantMD API is not configured. Add PLANTMD_API_URL to the server environment.'
+    }, 503)
+  }
+
+  const imageData = typeof body?.image === 'string' ? body.image : ''
+
+  if (!imageData) {
+    return ok({
+      error: 'Please upload a crop image before running the diagnosis.'
+    }, 400)
+  }
+
+  try {
+    const mimeType =
+      typeof body?.mimeType === 'string' && body.mimeType.startsWith('image/')
+        ? body.mimeType
+        : 'image/jpeg'
+
+    const base64 = imageData.includes('base64,')
+      ? imageData.split('base64,')[1]
+      : imageData
+
+    const imageBuffer = Buffer.from(base64, 'base64')
+
+    const formData = new FormData()
+
+    formData.append(
+      'file',
+      new Blob([imageBuffer], { type: mimeType }),
+      'crop-image.jpg'
+    )
+
+    const response = await fetch(`${plantmdUrl}/predict`, {
+      method: 'POST',
+      body: formData,
+    })
+
+    const data = await response.json().catch(() => ({}))
+
+    if (!response.ok || !data.success) {
+      console.error('PlantMD error:', data)
+
+      return ok({
+        error: data.detail || data.error || 'PlantMD crop diagnosis failed.'
+      }, 502)
+    }
+
+    const diagnosis =
+  data.disease || data.prediction || 'Healthy'
+
+const mappedRecommendation = mapSymptomsToRecommendation({
+  cropType: data.crop || body?.cropType || 'Rice',
+  issue: diagnosis,
+  symptoms: [diagnosis],
+})
+
+return ok({
+  issue: diagnosis,
+  detectedIssue: diagnosis,
+  prediction: data.prediction,
+  crop: data.crop,
+  disease: data.disease,
+  status: data.status,
+  confidence: data.confidence,
+  confidence_percent: Number(
+    data.confidence_percent ?? (data.confidence * 100)
+  ).toFixed(0),
+
+  product: mappedRecommendation.product,
+  category: mappedRecommendation.category,
+  recommendation: mappedRecommendation.recommendation,
+  mappedRecommendation,
+  })
+
+  } catch (error) {
+    console.error('PlantMD connection error:', error)
+
+    return ok({
+      error: 'Unable to connect to the PlantMD disease detection service.'
+    }, 502)
+  }
+}
+
 async function createGeminiVisionDiagnosis(body) {
   if (!process.env.GEMINI_API_KEY) {
     return ok({ error: 'Gemini API is not configured. Add GEMINI_API_KEY to the server environment.' }, 503)
@@ -313,8 +401,8 @@ async function createGeminiVisionDiagnosis(body) {
 
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
-    console.error('Gemini vision error:', data)
-    return ok({ error: 'Gemini crop diagnosis failed. Check the image payload and GEMINI_API_KEY.' }, 502)
+    console.error('PlantMD AI error:', data)
+    return ok({ error: 'PlantMD crop diagnosis failed. Check the image payload and PLANTMD_API_URL.' }, 502)
   }
 
   const parsed = parseGeminiResponse(data)
@@ -355,7 +443,7 @@ async function handleRoute(request, { params }) {
     }
 
     if (route === '/crop-diagnose' && method === 'POST') {
-      return createGeminiVisionDiagnosis(await request.json())
+      return createPlantMDDiagnosis(await request.json())
     }
 
     if (route === '/products' && method === 'GET') {

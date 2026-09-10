@@ -521,7 +521,7 @@ export default function App() {
 
                 <div className="glass-card">
                   <div className="flex items-center gap-2 text-slate-900"><Camera className="h-5 w-5 text-emerald-600" /><h3 className="text-xl font-semibold">Crop Cam Diagnostic</h3></div>
-                  <p className="mt-2 text-sm text-slate-600">Snap a leaf to detect chlorosis, heat wilting & fungal lesions with Gemini Vision.</p>
+                  <p className="mt-2 text-sm text-slate-600">Snap a leaf to detect chlorosis, heat wilting & fungal lesions with PlantMD AI.</p>
                   {cameraOpen ? (
                     <div className="mt-5 overflow-hidden rounded-2xl border border-emerald-200 bg-slate-950">
                       <video ref={videoRef} autoPlay playsInline muted className="h-48 w-full object-cover" />
@@ -550,7 +550,7 @@ export default function App() {
                     <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
                       <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-700">Diagnosis</p>
                       <p className="mt-2 text-lg font-semibold">{cameraDiagnosis.issue}</p>
-                      <p className="mt-1">Severity: <span className="font-semibold">{cameraDiagnosis.severity}</span> · Confidence: <span className="font-semibold">{Number(cameraDiagnosis.confidence || 0).toFixed(2)}</span></p>
+                      <p className="mt-1">Confidence: <span className="font-semibold">{Number(cameraDiagnosis.confidence_percent || 0).toFixed(2)}</span></p>
                       <p className="mt-2 text-sm text-emerald-800">{cameraDiagnosis.recommendation || cameraDiagnosis.mappedRecommendation?.recommendation}</p>
                       {cameraDiagnosis.product && <p className="mt-2"><span className="font-semibold">Recommended product:</span> {cameraDiagnosis.product}</p>}
                       {cameraDiagnosis.dosageGuidance && <p className="mt-2 border-t border-emerald-200 pt-2 text-xs leading-5 text-emerald-800"><span className="font-semibold">Label-safe application:</span> {cameraDiagnosis.dosageGuidance}</p>}
