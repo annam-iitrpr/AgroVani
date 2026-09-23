@@ -42,8 +42,7 @@ const roles = [
     username: 'driver@agrovani.in',
     password: 'AgroVani@123',
     redirect: '/driver/dashboard',
-    badge: 'Routes & pickups',
-    badge: 'Mandi & marketplace access',
+    badge: 'Pickup & route access',
   },
   {
     key: 'admin',
@@ -53,15 +52,6 @@ const roles = [
     password: 'AgroVani@123',
     redirect: '/admin/dashboard',
     badge: 'Monitoring & oversight',
-  },
-  {
-    key: 'driver',
-    label: 'Driver',
-    accent: 'violet',
-    username: 'driver@agrovani.in',
-    password: 'AgroVani@123',
-    redirect: '/driver/dashboard',
-    badge: 'Pickup & route access',
   },
 ]
 

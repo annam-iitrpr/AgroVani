@@ -8,6 +8,7 @@ import WeatherMapCard from '@/components/farmer/WeatherMapCard'
 import BookMachineryCard from '@/components/farmer/BookMachineryCard'
 import LiveKitVoiceAgent from '@/components/farmer/LiveKitVoiceAgent'
 import RazorpayButton from '@/components/RazorpayButton'
+import ResiduePanel from '@/components/farmer/ResiduePanel'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import InstallAppButton from '@/components/InstallAppButton'
 import { useLanguage } from '@/lib/i18n/LanguageContext'
@@ -613,10 +614,11 @@ export default function App() {
 
           {tab === 'residue' && (
             <div className="grid gap-6 lg:grid-cols-3">
-              <form onSubmit={saveResidueProfile} className="glass-card card-3d lg:col-span-3">
-                <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-emerald-600">Residue supply update</p><h2 className="mt-2 text-2xl font-bold text-slate-900">Tell buyers what your field has</h2></div>{residueSaveMessage && <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">{residueSaveMessage}</span>}</div>
-                <div className="mt-5 grid gap-3 md:grid-cols-3"><select value={residueProfile.residueType} onChange={(event) => setResidueProfile({ ...residueProfile, residueType: event.target.value })} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"><option>Paddy straw</option><option>Wheat straw</option><option>Corn residue</option><option>Cotton stalk</option><option>Mixed biomass</option></select><select value={residueProfile.qualityGrade} onChange={(event) => setResidueProfile({ ...residueProfile, qualityGrade: event.target.value })} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"><option>Standard</option><option>Premium</option><option>Industrial</option></select><input required type="number" min="0.1" step="0.1" value={residueProfile.quantityQuintals} onChange={(event) => setResidueProfile({ ...residueProfile, quantityQuintals: event.target.value })} placeholder="Quantity (quintals)" className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm" /><input type="number" min="0" max="100" step="0.1" value={residueProfile.moisturePercent} onChange={(event) => setResidueProfile({ ...residueProfile, moisturePercent: event.target.value })} placeholder="Moisture %" className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm" /><select value={residueProfile.packaging} onChange={(event) => setResidueProfile({ ...residueProfile, packaging: event.target.value })} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"><option>Loose</option><option>Baled</option><option>Bagged</option></select><input type="date" value={residueProfile.pickupReadyDate} onChange={(event) => setResidueProfile({ ...residueProfile, pickupReadyDate: event.target.value })} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm" /><textarea value={residueProfile.notes} onChange={(event) => setResidueProfile({ ...residueProfile, notes: event.target.value })} placeholder="Quality notes, contamination, access or pickup instructions" className="min-h-20 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm md:col-span-2" /><button className="pill-dark">Update residue availability</button></div>
-              </form>
+              <ResiduePanel
+                farm={farm}
+                residue={residue}
+                onSave={(updatedProfile) => setResidueSaveMessage('Residue details updated for buyers.')}
+              />
               <div className="glass-card card-3d">
                 <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">{copy.residueForecast}</p>
                 <p className="mt-4 text-5xl font-bold tracking-tight text-slate-900">{residue ? (residue.residueTons / (farm?.areaInAcres || 1)).toFixed(1) : '—'} <span className="text-lg font-medium text-slate-500">t/acre</span></p>
