@@ -7,6 +7,7 @@
         "dev:no-reload": "cd web && next dev --hostname 0.0.0.0 --port 3000",
         "dev:webpack": "cd web && next dev --hostname 0.0.0.0 --port 3000",
         "build": "cd web && next build",
+        "build:github-pages": "bash ./scripts/build-github-pages.sh",
         "start": "cd web && next start",
         "test": "tsx --test tests/*.test.js tests/*.test.mjs",
         "test:advisory": "tsx --test tests/advisory.test.mjs",

@@ -27,9 +27,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Exclude server API route from static export
-        run: mv web/app/api /tmp/agrovani-api
-      - name: Build static frontend
+      - name: Build static frontend for GitHub Pages
         env:
           GITHUB_PAGES: 'true'
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
@@ -37,10 +35,7 @@ jobs:
           NEXT_PUBLIC_LOCATION_WS_URL: ${{ vars.NEXT_PUBLIC_LOCATION_WS_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-        run: npm run build
-      - name: Restore server API route
-        if: always()
-        run: mv /tmp/agrovani-api web/app/api
+        run: npm run build:github-pages
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/out
