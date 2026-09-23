@@ -3,7 +3,12 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Navigation, MapPinned, Clock3, PackageCheck, AlertCircle, Route, Radio } from 'lucide-react'
-import GoogleDriverMap from '@/components/driver/GoogleDriverMap'
+import dynamic from 'next/dynamic'
+
+const LeafletMap = dynamic(() => import('@/components/farmer/LeafletMap'), {
+  ssr: false,
+  loading: () => <div className="flex min-h-[300px] items-center justify-center bg-slate-100 text-slate-400">Loading live route map…</div>,
+})
 
 const checkpoints = [
   { name: 'Seed depot', time: '08:20', status: 'Complete' },
@@ -21,6 +26,9 @@ const routeStops = [
 export default function DriverRoutePage() {
   const [progress, setProgress] = useState(48)
   const [routeState, setRouteState] = useState('En route to farmer collection')
+  const [isBroadcasting, setIsBroadcasting] = useState(true)
+  const [connectionStatus, setConnectionStatus] = useState('Connecting...')
+  const [driverLocation, setDriverLocation] = useState(null)
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -30,33 +38,42 @@ export default function DriverRoutePage() {
   }, [])
 
   useEffect(() => {
+    if (!isBroadcasting) {
+      setConnectionStatus('Offline')
+      return undefined
+    }
+
     const websocketUrl = process.env.NEXT_PUBLIC_LOCATION_WS_URL
     if (!websocketUrl) return undefined
 
     const socket = new WebSocket(websocketUrl)
-    let latitude = 30.3398
-    let longitude = 76.3869
-    const publish = (nextLatitude, nextLongitude) => {
-      latitude = nextLatitude
-      longitude = nextLongitude
+    let watchId = null
+
+    const publish = (latitude, longitude) => {
+      setDriverLocation({ latitude, longitude, status: 'active' })
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'location_update', id: 'driver-demo', latitude, longitude, status: 'active' }))
       }
     }
 
     socket.onopen = () => {
+      setConnectionStatus('Live GPS active')
       if (!navigator.geolocation) return
-      navigator.geolocation.watchPosition(
+      watchId = navigator.geolocation.watchPosition(
         (position) => publish(position.coords.latitude, position.coords.longitude),
-        () => {},
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
+        () => { setConnectionStatus('GPS signal lost') },
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
       )
     }
 
+    socket.onclose = () => setConnectionStatus('Disconnected')
+    socket.onerror = () => setConnectionStatus('Connection error')
+
     return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId)
       socket.close()
     }
-  }, [])
+  }, [isBroadcasting])
 
   const liveCheckpoints = checkpoints.map((stop, index) => ({
     ...stop,
@@ -83,7 +100,10 @@ export default function DriverRoutePage() {
             <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-800 to-slate-700 p-6 text-white">
               <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-300">
                 <span>Patiala Cluster</span>
-                <span className="flex items-center gap-2 text-emerald-300"><Radio className="h-3.5 w-3.5 animate-pulse" /> Live GPS</span>
+                <span className={`flex items-center gap-2 ${isBroadcasting ? 'text-emerald-300' : 'text-slate-400'}`}>
+                  {isBroadcasting && <Radio className="h-3.5 w-3.5 animate-pulse" />} 
+                  {connectionStatus}
+                </span>
               </div>
               <div className="relative mt-8 h-56 overflow-hidden rounded-[20px] border border-white/10 bg-[radial-gradient(circle_at_center,rgba(168,85,247,0.2),transparent_36%),linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.01))] p-4">
                 <div className="relative h-full w-full">
@@ -101,9 +121,9 @@ export default function DriverRoutePage() {
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-violet-400 transition-all duration-1000" style={{ width: `${progress}%` }} /></div>
             </div>
 
-            <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">Google Maps navigation</div>
-              <GoogleDriverMap />
+            <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200 bg-white min-h-[300px]">
+              <div className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">Live navigation map</div>
+              <LeafletMap lat={driverLocation?.latitude || 30.3398} lon={driverLocation?.longitude || 76.3869} mode="residue" liveLocation={driverLocation} />
             </div>
 
             <div className="mt-6 space-y-3">
@@ -125,6 +145,26 @@ export default function DriverRoutePage() {
           </div>
 
           <div className="space-y-6">
+            <div className="rounded-[28px] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur-md">
+              <div className="flex items-center gap-2">
+                <Radio className="h-5 w-5 text-emerald-600" />
+                <h3 className="text-xl font-bold text-slate-900">Location settings</h3>
+              </div>
+              <div className="mt-5 flex items-center justify-between rounded-2xl bg-slate-50 p-4">
+                <div>
+                  <p className="font-semibold text-slate-900">Live broadcasting</p>
+                  <p className="text-sm text-slate-500">{connectionStatus}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsBroadcasting(!isBroadcasting)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isBroadcasting ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isBroadcasting ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            </div>
+
             <div className="rounded-[28px] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur-md">
               <div className="flex items-center gap-2">
                 <Route className="h-5 w-5 text-violet-600" />
