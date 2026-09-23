@@ -1,3 +1,15 @@
+const withPWA = require('@ducanh2912/next-pwa').default({
+  dest: 'public',
+  cacheOnFrontEndNav: true,
+  aggressiveFrontEndNavCaching: true,
+  reloadOnOnline: true,
+  swcMinify: true,
+  disable: process.env.NODE_ENV === 'development',
+  workboxOptions: {
+    disableDevLogs: true,
+  },
+});
+
 const nextConfig = {
   output: process.env.GITHUB_PAGES === 'true' ? 'export' : 'standalone',
   basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
@@ -47,4 +59,4 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+module.exports = withPWA(nextConfig);

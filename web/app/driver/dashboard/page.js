@@ -2,8 +2,13 @@
 
 import Link from 'next/link'
 import { ArrowLeft, MapPinned, Navigation, Clock3, Truck, PackageCheck, Route, AlertCircle } from 'lucide-react'
-import GoogleDriverMap from '@/components/driver/GoogleDriverMap'
+import dynamic from 'next/dynamic'
 import SupportDock from '@/components/SupportDock'
+
+const LeafletMap = dynamic(() => import('@/components/farmer/LeafletMap'), {
+  ssr: false,
+  loading: () => <div className="flex min-h-[300px] items-center justify-center bg-slate-100 text-slate-400">Loading live route map…</div>,
+})
 
 const metrics = [
   { label: 'Assigned trips', value: '18', detail: '6 active' },
@@ -92,8 +97,8 @@ export default function DriverDashboard() {
                   <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-emerald-400 to-violet-400" />
                 </div>
               </div>
-              <div className="mt-4 overflow-hidden rounded-[20px] border border-slate-200">
-                <GoogleDriverMap />
+              <div className="mt-4 overflow-hidden rounded-[20px] border border-slate-200 min-h-[300px]">
+                <LeafletMap lat={30.3398} lon={76.3869} mode="residue" />
               </div>
             </div>
 

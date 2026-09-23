@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
+import { useSpring } from 'framer-motion'
 import { MapContainer, TileLayer, Marker, Popup, Polygon, Circle, LayersControl } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -31,6 +33,36 @@ const ICONS = {
 
 function offset(lat, lon, dLat, dLon) {
   return [lat + dLat, lon + dLon]
+}
+
+function AnimatedMarker({ position, icon, children }) {
+  const markerRef = useRef(null)
+  const latSpring = useSpring(position[0], { stiffness: 60, damping: 15 })
+  const lngSpring = useSpring(position[1], { stiffness: 60, damping: 15 })
+
+  useEffect(() => {
+    latSpring.set(position[0])
+    lngSpring.set(position[1])
+  }, [position, latSpring, lngSpring])
+
+  useEffect(() => {
+    const unsubscribeLat = latSpring.on('change', (v) => {
+      if (markerRef.current) markerRef.current.setLatLng([v, lngSpring.get()])
+    })
+    const unsubscribeLng = lngSpring.on('change', (v) => {
+      if (markerRef.current) markerRef.current.setLatLng([latSpring.get(), v])
+    })
+    return () => {
+      unsubscribeLat()
+      unsubscribeLng()
+    }
+  }, [latSpring, lngSpring])
+
+  return (
+    <Marker ref={markerRef} position={position} icon={icon}>
+      {children}
+    </Marker>
+  )
 }
 
 export default function LeafletMap({ lat, lon, liveLocation, mode = 'residue', stressScore = 0 }) {
@@ -86,9 +118,9 @@ export default function LeafletMap({ lat, lon, liveLocation, mode = 'residue', s
         <Popup>Your farm</Popup>
       </Marker>
 
-      {liveLocation?.status === 'active' && <Marker position={liveCenter} icon={ICONS.green}>
+      {liveLocation?.status === 'active' && <AnimatedMarker position={liveCenter} icon={ICONS.green}>
         <Popup>Live driver location · active</Popup>
-      </Marker>}
+      </AnimatedMarker>}
 
       {markers.map((m, i) => (
         <Marker key={i} position={m.pos} icon={ICONS[m.icon]}>

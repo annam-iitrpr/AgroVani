@@ -7,6 +7,12 @@ const inter = Inter({ subsets: ['latin'], display: 'swap' })
 export const metadata = {
   title: 'AgroVani — Annam.ai',
   description: 'Clean residue, smarter fields, stronger incomes. Precision residue insights and biostimulant crop-health decisions for Indian farmers.',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'AgroVani',
+  },
 }
 
 export const viewport = {
