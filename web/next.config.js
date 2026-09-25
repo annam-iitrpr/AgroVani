@@ -4,14 +4,14 @@ const withPWA = require('@ducanh2912/next-pwa').default({
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
   swcMinify: true,
-  disable: process.env.NODE_ENV === 'development',
+  disable: process.env.NODE_ENV === 'development' || process.env.DISABLE_PWA === 'true',
   workboxOptions: {
     disableDevLogs: true,
   },
 });
 
 const nextConfig = {
-  output: process.env.GITHUB_PAGES === 'true' ? 'export' : 'standalone',
+  output: process.env.GITHUB_PAGES === 'true' ? 'export' : undefined,
   basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
   assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH ? `${process.env.NEXT_PUBLIC_BASE_PATH}/` : undefined,
   reactStrictMode: false,
@@ -59,4 +59,4 @@ const nextConfig = {
   },
 };
 
-module.exports = withPWA(nextConfig);
+module.exports = process.env.DISABLE_PWA === 'true' ? nextConfig : withPWA(nextConfig);

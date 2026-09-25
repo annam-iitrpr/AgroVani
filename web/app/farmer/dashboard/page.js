@@ -7,6 +7,8 @@ import FarmMapCard from '@/components/farmer/FarmMapCard'
 import WeatherMapCard from '@/components/farmer/WeatherMapCard'
 import BookMachineryCard from '@/components/farmer/BookMachineryCard'
 import LiveKitVoiceAgent from '@/components/farmer/LiveKitVoiceAgent'
+import MultilingualVoiceBridge from '@/components/farmer/MultilingualVoiceBridge'
+import AgenticSearchPanel from '@/components/farmer/AgenticSearchPanel'
 import RazorpayButton from '@/components/RazorpayButton'
 import ResiduePanel from '@/components/farmer/ResiduePanel'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
@@ -67,6 +69,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [marketplaceListings, setMarketplaceListings] = useState([])
   const [buyerNotifications, setBuyerNotifications] = useState([])
+  const [priceLock, setPriceLock] = useState(null)
   const [residueProfile, setResidueProfile] = useState({ residueType: 'Paddy straw', qualityGrade: 'Standard', quantityQuintals: '', moisturePercent: '', packaging: 'Loose', pickupReadyDate: '', notes: '' })
   const [residueSaveMessage, setResidueSaveMessage] = useState('')
   const [marketplaceMessage, setMarketplaceMessage] = useState('')
@@ -439,9 +442,13 @@ export default function App() {
       })
       .catch((error) => console.error('Marketplace loading failed:', error))
 
-    fetch(apiUrl('/api/notifications?audience=farmer'))
+    fetch(apiUrl(`/api/notifications?audience=farmer&farmId=${encodeURIComponent(f.id)}`))
       .then(async (r) => { const data = await r.json(); if (!r.ok || !Array.isArray(data)) throw new Error(data.error || 'Notifications unavailable'); setBuyerNotifications(data) })
       .catch((error) => console.error('Buyer notification loading failed:', error))
+
+    fetch(apiUrl(`/api/marketplace/availability?cropType=${encodeURIComponent(f.cropType || 'Rice')}&region=${encodeURIComponent(f.state || f.district || 'Punjab')}`))
+      .then(async (r) => { const data = await r.json(); if (!r.ok || !data) return; if (data.mandiPricePerQtl) setPriceLock({ marketPrice: data.mandiPricePerQtl, suggestedLock: Math.round(data.mandiPricePerQtl * 0.96) }) })
+      .catch(() => {})
 
     fetch(apiUrl(`/api/stress?farmId=${f.id}`))
       .then(async (r) => {
@@ -537,6 +544,8 @@ export default function App() {
     { source: 'Weather signal', note: `Crop cycle confidence: ${cropTimeline[0]?.confidence || 88}% based on live weather and field context`, tone: 'sky' },
   ], [cropTimeline, marketplaceListings.length, stress])
 
+  const matchMessage = buyerNotifications.find((notification) => notification.type === 'buyer_demand')
+
   const filteredProducts = useMemo(() => {
     const query = productSearch.trim().toLowerCase()
     return availableProducts.filter((product) => !query || `${product.name} ${product.type} ${product.category} ${product.targets}`.toLowerCase().includes(query))
@@ -629,6 +638,12 @@ export default function App() {
                 <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">{copy.buyerDemand}</p>
                 <p className="mt-4 text-5xl font-bold tracking-tight text-emerald-600">{residue?.buyerDemand || '—'}</p>
                 <p className="mt-3 flex items-center gap-1 text-sm text-slate-600"><IndianRupee className="h-4 w-4" /> {residue?.totalValueINR?.toLocaleString('en-IN') ?? '—'} potential value</p>
+                {priceLock && (
+                  <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                    <p className="font-bold">Mandi-linked price lock</p>
+                    <p className="mt-1">Current rate: ₹{priceLock.marketPrice}/qtl · Suggested lock: ₹{priceLock.suggestedLock}/qtl</p>
+                  </div>
+                )}
                 <Link href="/farmer/yield" className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800 transition hover:-translate-y-0.5 hover:bg-emerald-100"><TrendingUp className="h-4 w-4" /> Check yield percentage</Link>
                 <BookMachineryCard farm={farm} defaultType="Baler" triggerLabel="Sell Stubble" triggerClass="pill-dark mt-4 w-full" />
               </div>
@@ -673,6 +688,13 @@ export default function App() {
                 </div>
 
                 {buyerNotifications.length > 0 && <div className="mt-4 space-y-2">{buyerNotifications.slice(0, 3).map((notification) => <div key={notification.id} className="flex items-start justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">New buyer requirement</p><p className="mt-1 text-sm font-semibold">{notification.message}</p></div><button type="button" onClick={() => { fetch(apiUrl('/api/notifications'), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: notification.id }) }).catch(() => {}); setBuyerNotifications((items) => items.filter((item) => item.id !== notification.id)) }} className="text-xs font-semibold text-amber-700">Dismiss</button></div>)}</div>}
+
+                {matchMessage && (
+                  <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                    <p className="font-bold">Buyer demand alert</p>
+                    <p className="mt-1">{matchMessage.message}</p>
+                  </div>
+                )}
 
                 {marketplaceMessage && (
                   <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{marketplaceMessage}</div>
@@ -1022,6 +1044,14 @@ export default function App() {
                   <div className="flex items-center gap-2 text-slate-900"><Mic className="h-5 w-5 text-emerald-600" /><h3 className="text-xl font-semibold">Live Voice Advisory</h3></div>
                   <p className="mt-2 text-sm text-slate-600">Talk naturally with the Gemini Live agent in Punjabi, Hindi, Marathi, Tamil, Telugu, or English.</p>
                   <LiveKitVoiceAgent farmId={farm?.id} locale={locale} context={stress || residue || { farm: farm?.cropType || 'Rice' }} />
+                </div>
+
+                <div className="glass-card">
+                  <MultilingualVoiceBridge farm={farm} context={stress || residue || { farm: farm?.cropType || 'Rice' }} />
+                </div>
+
+                <div className="glass-card">
+                  <AgenticSearchPanel farm={farm} context={stress || residue || { farm: farm?.cropType || 'Rice' }} />
                 </div>
 
                 <div className="glass-card">
