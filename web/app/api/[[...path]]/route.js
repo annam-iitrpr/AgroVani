@@ -17,6 +17,11 @@ import { plans } from '@/lib/data/plans'
 import { farmCreateSchema, listingCreateSchema, orderCreateSchema, validationError } from '@/contracts/api'
 import { buildResidueOperations, generateResiduePlan } from '@/backend/services/residueService'
 import { residuePlanSchema } from '@/contracts/api'
+import marketplaceService from '@/backend/services/marketplaceService'
+import translationService from '@/backend/services/translationService'
+
+const { getLiveAvailability, findMatchingFarmers } = marketplaceService
+const { normalizeLanguage, translateTextForFarmer, buildAgenticSearchPlan } = translationService
 
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || process.env.NEXT_PUBLIC_BASE_URL || '*')
@@ -241,9 +246,14 @@ async function createGeminiAudioReply(db, body) {
   const farmContext = farm
     ? `Farmer: ${farm.name}. Location: ${farm.village}, ${farm.district}, ${farm.state}. Crop: ${farm.cropType}. Area: ${farm.areaInAcres} acres. Soil pH: ${farm.soilPh ?? 'unknown'}. Nitrogen: ${farm.nitrogenKgPerHa ?? 'unknown'} kg/ha.`
     : 'No farm profile is available yet.'
-  const language = body.locale === 'hi' ? 'Hindi' : body.locale === 'pa' ? 'Punjabi' : 'English'
+  const sourceLanguage = normalizeLanguage(body.sourceLanguage || body.locale || 'ta')
+  const targetLanguage = normalizeLanguage(body.targetLanguage || body.locale || 'hi')
+  const sourceName = { en: 'English', hi: 'Hindi', pa: 'Punjabi', ta: 'Tamil', te: 'Telugu', mr: 'Marathi' }[sourceLanguage] || 'the source language'
+  const targetName = { en: 'English', hi: 'Hindi', pa: 'Punjabi', ta: 'Tamil', te: 'Telugu', mr: 'Marathi' }[targetLanguage] || 'the farmer language'
+  const language = body.locale === 'hi' ? 'Hindi' : body.locale === 'pa' ? 'Punjabi' : body.locale === 'ta' ? 'Tamil' : body.locale === 'te' ? 'Telugu' : 'English'
   const instruction = [
     'You are AgroVani, a concise and practical agricultural voice advisor for Indian farmers.',
+    `This audio comes from a buyer speaking ${sourceName}. Translate and decode it into ${targetName} for the farmer. Keep the business meaning, price, quantity, urgency, and crop details intact.`,
     `Understand the recorded farmer question and answer in ${language}, or in the language spoken by the farmer.`,
     'Return only the spoken answer as plain text, with short sentences and no markdown.',
     'Never invent weather, disease diagnoses, pesticide doses, or prices. Recommend a local agronomist for high-risk chemical questions.',
@@ -269,7 +279,7 @@ async function createGeminiAudioReply(db, body) {
     return ok({ error: 'Gemini could not understand the recording. Please try again.' }, 502)
   }
   const reply = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim()
-  return reply ? ok({ reply }) : ok({ error: 'Gemini returned an empty voice response' }, 502)
+  return reply ? ok({ reply, translatedText: reply, sourceLanguage, targetLanguage, mode: 'gemini' }) : ok({ error: 'Gemini returned an empty voice response' }, 502)
 }
 
 async function createGeminiVisionDiagnosis(body) {
@@ -330,6 +340,38 @@ async function createGeminiVisionDiagnosis(body) {
   })
 }
 
+async function translateBuyerText(body = {}) {
+  const text = String(body?.text || '').trim()
+  if (!text) return ok({ error: 'Please provide a buyer message to translate.' }, 400)
+
+  const sourceLanguage = normalizeLanguage(body?.sourceLanguage || 'ta')
+  const targetLanguage = normalizeLanguage(body?.targetLanguage || 'hi')
+  const translation = await translateTextForFarmer({ text, sourceLanguage, targetLanguage })
+  return ok({
+    ...translation,
+    sourceLanguage,
+    targetLanguage,
+    translatedText: translation.translatedText,
+  })
+}
+
+async function buildFarmerSearchPlan(body = {}) {
+  const query = String(body?.query || '').trim()
+  if (!query) return ok({ error: 'Please enter a farmer search query.' }, 400)
+
+  const plan = buildAgenticSearchPlan(query, {
+    cropType: body?.cropType || 'Rice',
+    farmId: body?.farmId || null,
+    locale: body?.locale || 'hi',
+  })
+
+  return ok({
+    ...plan,
+    modules: plan.modules || [],
+    response: plan.response || 'Use the recommended field action for the next step.',
+  })
+}
+
 async function handleRoute(request, { params }) {
   const { path = [] } = await params
   const route = `/${path.join('/')}`
@@ -337,6 +379,16 @@ async function handleRoute(request, { params }) {
   const { searchParams } = new URL(request.url)
 
   try {
+    if (route === '/health' && method === 'GET') {
+      return ok({
+        status: 'ok',
+        service: 'agrosaathi-product-web',
+        timestamp: new Date().toISOString(),
+        database: process.env.DATABASE_URL ? 'configured' : 'legacy-adapter',
+        yieldModel: process.env.YIELD_MODEL_API_URL ? 'configured' : 'optional',
+      })
+    }
+
     if (route === '/livekit/token' && method === 'POST') {
       if (!process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET || !process.env.LIVEKIT_URL) {
         return ok({ error: 'LiveKit is not configured. Add LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.' }, 503)
@@ -385,6 +437,14 @@ async function handleRoute(request, { params }) {
       const body = await request.json()
       if (!body.crop || Number(body.areaInAcres) <= 0) return ok({ error: 'crop and a positive areaInAcres are required' }, 400)
       return ok(predictYield(body))
+    }
+
+    if (route === '/translate' && method === 'POST') {
+      return translateBuyerText(await request.json())
+    }
+
+    if (route === '/agentic-search' && method === 'POST') {
+      return buildFarmerSearchPlan(await request.json())
     }
 
     if (route === '/report/whatsapp' && method === 'POST') {
@@ -612,7 +672,36 @@ async function handleRoute(request, { params }) {
         createdAt: new Date(),
       }
       await db.collection('buyer_needs').insertOne(need)
+      const matchingFarms = await db.collection('farms').find({ cropType: String(body.cropType).trim() }).limit(25).toArray()
+      const farmerAlerts = matchingFarms.map((farm) => ({
+        id: uuidv4(),
+        audience: 'farmer',
+        type: 'buyer_demand',
+        title: 'Buyer demand match',
+        message: `${body.buyerId || 'A buyer'} needs ${Number(body.quantity)} tons of ${body.residueType} for ${body.cropType} in ${body.region || 'your region'}.`,
+        farmId: farm.id,
+        read: false,
+        createdAt: new Date(),
+      }))
+      if (farmerAlerts.length) {
+        await db.collection('notifications').insertMany(farmerAlerts)
+      }
       return ok(need, 201)
+    }
+
+    if (route === '/marketplace/availability' && method === 'GET') {
+      const cropType = searchParams.get('cropType') || ''
+      const region = searchParams.get('region') || ''
+      const farms = await db.collection('farms').find({}).limit(250).toArray()
+      const mandi = lookupMandiPrices({ commodity: cropType || 'Rice', state: region || 'Punjab', market: '' })
+      const availability = getLiveAvailability({ cropType, region, farms })
+      const matches = findMatchingFarmers({ cropType, region, farms, mandiPrice: mandi.latestModalPrice || 0 })
+      return ok({
+        ...availability,
+        mandiPricePerQtl: mandi.latestModalPrice || null,
+        mandiSource: mandi.source || null,
+        matchingFarmers: matches,
+      })
     }
 
     if (route === '/buyer/sellers' && method === 'GET') {
@@ -726,8 +815,13 @@ async function handleRoute(request, { params }) {
 
     if (route === '/notifications' && method === 'GET') {
       const audience = searchParams.get('audience') || 'farmer'
-      const notifications = await db.collection('notifications').find({ audience }).sort({ createdAt: -1 }).limit(100).toArray()
-      return ok(notifications)
+      const farmId = searchParams.get('farmId')
+      const userId = searchParams.get('userId')
+      const query = { audience }
+      if (farmId) query.farmId = farmId
+      if (userId) query.userId = userId
+      const notifications = await db.collection('notifications').find(query).sort({ createdAt: -1 }).limit(100).toArray()
+      return ok(notifications.map((notification) => ({ ...notification, unread: !notification.readAt && notification.read !== true })))
     }
 
     if (route === '/notifications' && method === 'PATCH') {
@@ -735,6 +829,7 @@ async function handleRoute(request, { params }) {
       const notification = await db.collection('notifications').findOne({ id: body.id })
       if (!notification) return ok({ error: 'Notification not found' }, 404)
       notification.read = true
+      notification.readAt = new Date()
       await db.collection('notifications').updateOne({ id: notification.id }, { $set: notification })
       return ok(notification)
     }
