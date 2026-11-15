@@ -2,14 +2,14 @@
 
 import { useEffect, useRef } from 'react'
 import { useSpring } from 'framer-motion'
-import { MapContainer, TileLayer, Marker, Popup, Polygon, Circle, LayersControl } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polygon, Circle, LayersControl, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
 const { BaseLayer } = LayersControl
 
-const streetTileUrl = process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-const streetAttribution = process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION || '&copy; OpenStreetMap contributors'
+const streetTileUrl = process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+const streetAttribution = process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION || '&copy; OpenStreetMap contributors &copy; CARTO'
 const satelliteTileUrl = process.env.NEXT_PUBLIC_MAP_SATELLITE_TILE_URL || 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 const satelliteAttribution = process.env.NEXT_PUBLIC_MAP_SATELLITE_ATTRIBUTION || 'Tiles &copy; Esri'
 
@@ -63,6 +63,16 @@ function AnimatedMarker({ position, icon, children }) {
       {children}
     </Marker>
   )
+}
+
+function FollowLiveLocation({ position }) {
+  const map = useMap()
+
+  useEffect(() => {
+    map.panTo(position, { animate: true, duration: 0.5 })
+  }, [map, position])
+
+  return null
 }
 
 export default function LeafletMap({ lat, lon, liveLocation, mode = 'residue', stressScore = 0 }) {
@@ -121,6 +131,7 @@ export default function LeafletMap({ lat, lon, liveLocation, mode = 'residue', s
       {liveLocation?.status === 'active' && <AnimatedMarker position={liveCenter} icon={ICONS.green}>
         <Popup>Live driver location · active</Popup>
       </AnimatedMarker>}
+      {liveLocation?.status === 'active' && <FollowLiveLocation position={liveCenter} />}
 
       {markers.map((m, i) => (
         <Marker key={i} position={m.pos} icon={ICONS[m.icon]}>
