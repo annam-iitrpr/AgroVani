@@ -36,6 +36,18 @@ services:
     depends_on:
       - redis
 
+  matching-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.matching
+    container_name: agrosaathi-matching-api
+    restart: unless-stopped
+    environment:
+      PORT: 8000
+      MATCH_API_KEY: ${MATCH_API_KEY:-}
+    ports:
+      - '8000:8000'
+
 volumes:
   postgres_data:
   redis_data:

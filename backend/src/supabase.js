@@ -31,7 +31,7 @@ const TABLE_COLUMNS = {
     listingType: 'listing_type', residueType: 'residue_type', qualityGrade: 'quality_grade', moisturePercent: 'moisture_percent', quantityQuintals: 'quantity_quintals', pickupDistrict: 'pickup_district', createdAt: 'created_at', updatedAt: 'updated_at',
   },
   marketplace_orders: {
-    listingId: 'listing_id', farmId: 'farm_id', buyerId: 'buyer_id', sellerId: 'seller_id', sellerName: 'seller_name', sellerState: 'seller_state', sellerPlace: 'seller_place', listingName: 'listing_name', expectedDeliveryDays: 'expected_delivery_days', expectedDeliveryAt: 'expected_delivery_at',
+    listingId: 'listing_id', farmId: 'farm_id', buyerId: 'buyer_id', buyerName: 'buyer_name', farmName: 'farm_name', pickupDistrict: 'pickup_district', deliveryDistrict: 'delivery_district', driverId: 'driver_id', sellerId: 'seller_id', sellerName: 'seller_name', sellerState: 'seller_state', sellerPlace: 'seller_place', listingName: 'listing_name', expectedDeliveryDays: 'expected_delivery_days', expectedDeliveryAt: 'expected_delivery_at',
     quantity: 'quantity', totalInr: 'total_inr', createdAt: 'created_at',
     updatedAt: 'updated_at',
   },
@@ -65,6 +65,11 @@ const TABLE_COLUMNS = {
     farmId: 'farm_id', residueType: 'residue_type', quantityQuintals: 'quantity_quintals', qualityGrade: 'quality_grade',
     pickupReadyDate: 'pickup_ready_date', dispatchWindow: 'dispatch_window', buyerSignal: 'buyer_signal', nextActions: 'next_actions',
     safetyNote: 'safety_note', createdAt: 'created_at', updatedAt: 'updated_at',
+  },
+  residue_pickups: {
+    farmId: 'farm_id', farmerName: 'farmer_name', residueType: 'residue_type',
+    quantityQuintals: 'quantity_quintals', pickupDate: 'pickup_date',
+    driverId: 'driver_id', createdAt: 'created_at', updatedAt: 'updated_at',
   },
 }
 
@@ -104,11 +109,13 @@ function createSupabaseCollection(supabase, table) {
     async updateOne(query, update) {
       let request = supabase.from(table).update(toDatabaseRow(table, update.$set || update))
       for (const [key, value] of Object.entries(query)) {
-        request = request.eq((TABLE_COLUMNS[table] || {})[key] || key, value)
+        const column = (TABLE_COLUMNS[table] || {})[key] || key
+        request = value === null ? request.is(column, null) : request.eq(column, value)
       }
-      const result = await request
+      const result = await request.select('id')
       throwIfError(result)
-      return { matchedCount: result.count || 1, modifiedCount: result.count || 1 }
+      const matchedCount = result.data?.length || 0
+      return { matchedCount, modifiedCount: matchedCount }
     },
     find(query = {}) {
       let sortSpec = null

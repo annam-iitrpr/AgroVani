@@ -15,8 +15,16 @@ import { compareMsp, lookupMandiPrices } from '@/backend/services/mandiService'
 import { buildFarmReportPdf, createWhatsAppText } from '@/backend/services/reportService'
 import { fetchIndiaWeather } from '@/backend/adapters/cloudNextWeather'
 import { plans } from '@/lib/data/plans'
-import { farmCreateSchema, farmCropCycleSchema, listingCreateSchema, orderCreateSchema, validationError } from '@/contracts/api'
+import {
+  farmCreateSchema,
+  farmCropCycleSchema,
+  listingCreateSchema,
+  orderCreateSchema,
+  residuePickupSchema,
+  validationError,
+} from '@/contracts/api'
 import { buildResidueOperations, generateResiduePlan } from '@/backend/services/residueService'
+import { generateGeminiSpeech } from '@/backend/services/geminiSpeech'
 import { residuePlanSchema } from '@/contracts/api'
 import marketplaceService from '@/backend/services/marketplaceService'
 import translationService from '@/backend/services/translationService'
@@ -28,16 +36,14 @@ const { LANGUAGE_LABELS, normalizeLanguage, translateTextForFarmer, buildAgentic
 
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || process.env.NEXT_PUBLIC_BASE_URL || '*')
-  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
   response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   response.headers.set('Access-Control-Allow-Credentials', 'true')
   return response
 }
 
 function ok(data, status = 200) {
-  const response = handleCORS(NextResponse.json(data, { status }))
-  response.headers.set('X-Persistence-Mode', getDatabaseMode())
-  return response
+  return handleCORS(NextResponse.json(data, { status }))
 }
 
 function pdf(data) {
@@ -45,6 +51,43 @@ function pdf(data) {
   response.headers.set('Content-Type', 'application/pdf')
   response.headers.set('Content-Disposition', 'inline; filename="agrovani-farm-report.pdf"')
   return handleCORS(response)
+}
+
+function marketplaceOrderView(order, audience, driverId = '') {
+  const shared = {
+    id: order.id,
+    listingName: order.listingName,
+    quantity: order.quantity,
+    status: order.status,
+    expectedDeliveryAt: order.expectedDeliveryAt,
+  }
+  if (audience === 'driver') {
+    return {
+      ...shared,
+      buyerName: order.buyerName || 'Farmer',
+      sellerName: order.sellerName || 'Seller',
+      sellerPlace: order.sellerPlace || '',
+      pickupDistrict: order.pickupDistrict || '',
+      farmName: order.farmName || 'Farm',
+      deliveryDistrict: order.deliveryDistrict || '',
+      assignedToYou: Boolean(order.driverId && order.driverId === driverId),
+    }
+  }
+  if (audience === 'seller') {
+    return {
+      ...shared,
+      buyerName: order.buyerName || 'Farmer',
+      totalInr: order.totalInr,
+      driverAssigned: Boolean(order.driverId),
+      pickupDistrict: order.pickupDistrict || '',
+    }
+  }
+  return {
+    ...shared,
+    sellerName: order.sellerName || 'Seller',
+    totalInr: order.totalInr,
+    pickupDistrict: order.pickupDistrict || '',
+  }
 }
 
 function buildProductRecommendation({ crop, state, areaInAcres, usedProducts = [], diagnostic = {} }) {
@@ -372,15 +415,46 @@ async function createBhashiniAudioReply(db, body) {
       console.warn('Bhashini speech synthesis unavailable:', error.message)
     }
   }
+  let geminiSpeech = null
+  let speechError = ''
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      geminiSpeech = await generateGeminiSpeech({ text: assistantData.reply })
+    } catch (error) {
+      speechError = error.message || 'Gemini speech synthesis is unavailable.'
+      console.warn('Gemini speech synthesis unavailable:', speechError)
+    }
+  }
   return ok({
     ...assistantData,
     transcript,
     sourceLanguage,
     targetLanguage,
     mode: 'bhashini',
-    audio: speech?.audioContent || null,
-    audioMimeType: speech?.mimeType || null,
+    audio: geminiSpeech?.audio || speech?.audioContent || null,
+    audioMimeType: geminiSpeech?.mimeType || speech?.mimeType || null,
+    speechProvider: geminiSpeech ? 'gemini' : speech ? 'bhashini' : null,
+    speechError: speechError || (!speech && !process.env.GEMINI_API_KEY ? 'Configure GEMINI_API_KEY or Bhashini TTS to hear the advisory.' : ''),
   })
+}
+
+async function addGeminiSpeech(reply) {
+  if (!process.env.GEMINI_API_KEY) {
+    return {
+      audio: null,
+      audioMimeType: null,
+      speechProvider: null,
+      speechError: 'Configure GEMINI_API_KEY to enable Gemini-generated speech.',
+    }
+  }
+  try {
+    const speech = await generateGeminiSpeech({ text: reply })
+    return { ...speech, speechProvider: 'gemini', speechError: '' }
+  } catch (error) {
+    const speechError = error.message || 'Gemini speech synthesis is unavailable.'
+    console.warn('Gemini speech synthesis unavailable:', speechError)
+    return { audio: null, audioMimeType: null, speechProvider: null, speechError }
+  }
 }
 
 async function createGeminiAudioReply(db, body) {
@@ -409,7 +483,8 @@ async function createGeminiAudioReply(db, body) {
       const assistantResponse = await createAssistantReply(db, { ...body, message: transcript, locale: targetLanguage })
       const assistantData = await assistantResponse.json()
       if (assistantResponse.ok && assistantData.reply) {
-        return ok({ ...assistantData, transcript, sourceLanguage, targetLanguage, mode: 'groq' })
+        const speech = await addGeminiSpeech(assistantData.reply)
+        return ok({ ...assistantData, ...speech, transcript, sourceLanguage, targetLanguage, mode: 'groq' })
       }
       throw new Error(assistantData.error || 'Groq voice response was unavailable')
     } catch (error) {
@@ -453,7 +528,9 @@ async function createGeminiAudioReply(db, body) {
     return ok({ error: 'Gemini could not understand the recording. Please try again.' }, 502)
   }
   const reply = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim()
-  return reply ? ok({ reply, translatedText: reply, sourceLanguage, targetLanguage, mode: 'gemini' }) : ok({ error: 'Gemini returned an empty voice response' }, 502)
+  if (!reply) return ok({ error: 'Gemini returned an empty voice response' }, 502)
+  const speech = await addGeminiSpeech(reply)
+  return ok({ reply, translatedText: reply, sourceLanguage, targetLanguage, mode: 'gemini', ...speech })
 }
 
 async function createGeminiVisionDiagnosis(body) {
@@ -623,11 +700,7 @@ async function handleRoute(request, { params }) {
       const ready = databaseStatus === 'connected'
       return ok({
         status: ready ? 'ok' : 'degraded',
-        service: 'agrosaathi-product-web',
         timestamp: new Date().toISOString(),
-        database,
-        databaseStatus,
-        yieldModel: process.env.YIELD_MODEL_API_URL ? 'configured' : 'optional',
       }, process.env.NODE_ENV === 'production' && !ready ? 503 : 200)
     }
 
@@ -1127,9 +1200,31 @@ async function handleRoute(request, { params }) {
     if (route === '/marketplace/orders' && method === 'GET') {
       const sellerId = searchParams.get('sellerId')
       const buyerId = searchParams.get('buyerId')
-      const query = sellerId ? { sellerId } : buyerId ? { buyerId } : {}
+      const farmId = searchParams.get('farmId')
+      const driverId = searchParams.get('driverId')
+      const dispatchFor = searchParams.get('dispatchFor')
+      if (!sellerId && !buyerId && !farmId && !driverId && !dispatchFor) {
+        return ok({ error: 'A farm, buyer, seller, or driver is required' }, 400)
+      }
+      const query = dispatchFor
+        ? { status: { $in: ['out_for_delivery', 'delivered'] } }
+        : sellerId
+          ? { sellerId }
+          : buyerId
+            ? { buyerId }
+            : farmId
+              ? { farmId }
+              : driverId
+                ? { driverId }
+                : {}
       const orders = await db.collection('marketplace_orders').find(query).sort({ createdAt: -1 }).limit(200).toArray()
-      return ok(orders.map(({ _id, ...rest }) => rest))
+      const visibleOrders = dispatchFor
+        ? orders.filter((order) => order.status === 'delivered'
+          ? order.driverId === dispatchFor
+          : !order.driverId || order.driverId === dispatchFor)
+        : orders
+      const audience = dispatchFor || driverId ? 'driver' : sellerId ? 'seller' : 'farmer'
+      return ok(visibleOrders.map((order) => marketplaceOrderView(order, audience, dispatchFor || driverId || '')))
     }
 
     if (route === '/marketplace/orders' && method === 'POST') {
@@ -1142,32 +1237,82 @@ async function handleRoute(request, { params }) {
       if (!listing) return ok({ error: 'Listing not found' }, 404)
       if (listing.status !== 'active') return ok({ error: 'This listing is no longer active' }, 409)
       if (Number(listing.stockUnits) < quantity) return ok({ error: `Only ${listing.stockUnits} units remain in this listing` }, 409)
+      const farm = orderInput.farmId
+        ? await db.collection('farms').findOne({ id: orderInput.farmId })
+        : null
       listing.stockUnits = Number(listing.stockUnits) - quantity
       listing.updatedAt = new Date()
       await db.collection('marketplace_listings').updateOne({ id: listing.id }, { $set: listing })
       const order = {
         id: uuidv4(), listingId: orderInput.listingId, farmId: orderInput.farmId || null, buyerId: orderInput.buyerId || null,
+        buyerName: orderInput.buyerName || farm?.name || 'Farmer',
+        farmName: farm?.name || 'Farm pickup', pickupDistrict: listing.pickupDistrict || '',
+        deliveryDistrict: farm?.district || '',
         sellerId: orderInput.sellerId, sellerName: listing.sellerName || orderInput.sellerName || orderInput.sellerId,
         sellerState: listing.sellerState || orderInput.sellerState || 'India', sellerPlace: listing.sellerPlace || orderInput.sellerPlace || 'India',
         expectedDeliveryDays: Number(listing.expectedDeliveryDays || orderInput.expectedDeliveryDays || 7),
         expectedDeliveryAt: new Date(Date.now() + Number(listing.expectedDeliveryDays || orderInput.expectedDeliveryDays || 7) * 86400000),
         listingName: listing.name, quantity, totalInr: orderInput.totalInr || Number(listing.priceInr) * quantity,
-        status: 'new', createdAt: new Date(), updatedAt: new Date(),
+        status: 'new', driverId: null, createdAt: new Date(), updatedAt: new Date(),
       }
       await db.collection('marketplace_orders').insertOne(order)
-      return ok(order, 201)
+      return ok(marketplaceOrderView(order, 'farmer'), 201)
     }
 
     if (route === '/marketplace/orders' && method === 'PATCH') {
       const body = await request.json()
       const order = await db.collection('marketplace_orders').findOne({ id: body.id })
       if (!order) return ok({ error: 'Order not found' }, 404)
+      if (body.action === 'claim') {
+        if (typeof body.driverId !== 'string' || !body.driverId.trim()) {
+          return ok({ error: 'A driver is required to claim this delivery' }, 400)
+        }
+        if (order.status !== 'out_for_delivery') {
+          return ok({ error: 'This delivery is not ready for pickup' }, 409)
+        }
+        if (order.driverId && order.driverId !== body.driverId) {
+          return ok({ error: 'This delivery has already been assigned' }, 409)
+        }
+        const previousDriverId = order.driverId || null
+        const updatedAt = new Date()
+        const result = await db.collection('marketplace_orders').updateOne(
+          { id: order.id, status: 'out_for_delivery', driverId: previousDriverId },
+          { $set: { driverId: body.driverId, updatedAt } },
+        )
+        const updatedOrder = await db.collection('marketplace_orders').findOne({ id: order.id })
+        if (!result.matchedCount || updatedOrder?.driverId !== body.driverId) {
+          return ok({ error: 'This delivery has already been assigned' }, 409)
+        }
+        return ok(marketplaceOrderView(updatedOrder, 'driver', body.driverId))
+      }
+
       const nextStatus = body.status || 'packed'
       if (!['new', 'packed', 'out_for_delivery', 'delivered'].includes(nextStatus)) return ok({ error: 'Invalid order status' }, 400)
-      order.status = nextStatus
-      order.updatedAt = new Date()
-      if (db.collection('marketplace_orders').updateOne) await db.collection('marketplace_orders').updateOne({ id: order.id }, { $set: order })
-      return ok(order)
+      const previousStatus = order.status
+      if (body.driverId) {
+        if (order.status !== 'out_for_delivery' || order.driverId !== body.driverId || nextStatus !== 'delivered') {
+          return ok({ error: 'This delivery is not assigned to this driver' }, 409)
+        }
+      } else if (
+        (order.status === 'new' && nextStatus !== 'packed')
+        || (order.status === 'packed' && nextStatus !== 'out_for_delivery')
+        || order.status === 'out_for_delivery'
+        || order.status === 'delivered'
+      ) {
+        return ok({ error: 'This order cannot be advanced by the seller' }, 409)
+      }
+      const updatedAt = new Date()
+      const query = body.driverId
+        ? { id: order.id, status: previousStatus, driverId: body.driverId }
+        : { id: order.id, status: previousStatus }
+      const result = await db.collection('marketplace_orders').updateOne(query, {
+        $set: { status: nextStatus, updatedAt },
+      })
+      const updatedOrder = await db.collection('marketplace_orders').findOne({ id: order.id })
+      if (!result.matchedCount || updatedOrder?.status !== nextStatus) {
+        return ok({ error: 'This order changed before the update completed. Refresh and try again.' }, 409)
+      }
+      return ok(marketplaceOrderView(updatedOrder, body.driverId ? 'driver' : 'seller', body.driverId || ''))
     }
 
     if (route === '/admin/overview' && method === 'GET') {
@@ -1339,6 +1484,98 @@ async function handleRoute(request, { params }) {
       return ok(profile)
     }
 
+    if (route === '/residue/pickups' && method === 'GET') {
+      const farmId = searchParams.get('farmId')
+      const dispatchFor = searchParams.get('dispatchFor')
+      if (!farmId && !dispatchFor) return ok({ error: 'A farm or driver is required' }, 400)
+      const rows = await db.collection('residue_pickups')
+        .find(farmId ? { farmId } : {})
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .toArray()
+      const visibleRows = dispatchFor
+        ? rows.filter((pickup) => pickup.status === 'scheduled' || pickup.driverId === dispatchFor)
+        : rows
+      return ok(visibleRows.map((pickup) => ({
+        ...pickup,
+        kind: 'residue_pickup',
+        assignedToYou: Boolean(dispatchFor && pickup.driverId === dispatchFor),
+      })))
+    }
+
+    if (route === '/residue/pickups' && method === 'POST') {
+      const parsedBody = residuePickupSchema.safeParse(await request.json())
+      if (!parsedBody.success) return ok({ error: validationError(parsedBody) }, 400)
+      const input = parsedBody.data
+      if (input.pickupDate < new Date().toISOString().slice(0, 10)) {
+        return ok({ error: 'pickupDate must be today or a future date' }, 400)
+      }
+      const farm = await db.collection('farms').findOne({ id: input.farmId })
+      if (!farm) return ok({ error: 'Farm not found' }, 404)
+      const pickup = {
+        id: uuidv4(),
+        farmId: farm.id,
+        farmerName: farm.name || 'Farmer',
+        district: farm.district || '',
+        residueType: input.residueType,
+        quantityQuintals: input.quantityQuintals,
+        pickupDate: input.pickupDate,
+        notes: input.notes || '',
+        driverId: null,
+        status: 'scheduled',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      await db.collection('residue_pickups').insertOne(pickup)
+      return ok({ ...pickup, kind: 'residue_pickup', assignedToYou: false }, 201)
+    }
+
+    if (route === '/residue/pickups' && method === 'PATCH') {
+      const body = await request.json()
+      if (typeof body.id !== 'string' || !body.id.trim() || typeof body.driverId !== 'string' || !body.driverId.trim()) {
+        return ok({ error: 'A pickup id and driver id are required' }, 400)
+      }
+      const pickup = await db.collection('residue_pickups').findOne({ id: body.id })
+      if (!pickup) return ok({ error: 'Pickup not found' }, 404)
+      const collection = db.collection('residue_pickups')
+      const updatedAt = new Date()
+      if (body.action === 'claim') {
+        if (pickup.status !== 'scheduled') {
+          if (pickup.status === 'assigned' && pickup.driverId === body.driverId) {
+            return ok({ ...pickup, kind: 'residue_pickup', assignedToYou: true })
+          }
+          return ok({ error: 'This pickup is no longer available' }, 409)
+        }
+        const result = await collection.updateOne(
+          { id: pickup.id, status: 'scheduled', driverId: null },
+          { $set: { driverId: body.driverId, status: 'assigned', updatedAt } },
+        )
+        const updatedPickup = await collection.findOne({ id: pickup.id })
+        if (!result.matchedCount || updatedPickup?.driverId !== body.driverId) {
+          return ok({ error: 'This pickup has already been assigned' }, 409)
+        }
+        return ok({ ...updatedPickup, kind: 'residue_pickup', assignedToYou: true })
+      }
+      if (body.action === 'complete') {
+        if (pickup.status === 'completed' && pickup.driverId === body.driverId) {
+          return ok({ ...pickup, kind: 'residue_pickup', assignedToYou: true })
+        }
+        if (pickup.status !== 'assigned' || pickup.driverId !== body.driverId) {
+          return ok({ error: 'This pickup is not assigned to this driver' }, 409)
+        }
+        const result = await collection.updateOne(
+          { id: pickup.id, status: 'assigned', driverId: body.driverId },
+          { $set: { status: 'completed', updatedAt } },
+        )
+        const updatedPickup = await collection.findOne({ id: pickup.id })
+        if (!result.matchedCount || updatedPickup?.status !== 'completed') {
+          return ok({ error: 'This pickup could not be completed' }, 409)
+        }
+        return ok({ ...updatedPickup, kind: 'residue_pickup', assignedToYou: true })
+      }
+      return ok({ error: 'Invalid pickup action' }, 400)
+    }
+
     if (route === '/residue/operations' && method === 'GET') {
       const result = await buildResidueOperations({ db, farmId: searchParams.get('farmId') })
       return result.error ? ok({ error: result.error }, result.status) : ok(result)
@@ -1399,12 +1636,10 @@ async function handleRoute(request, { params }) {
     if (method === 'GET') {
       const fallback = buildPrototypeReadFallback(route, searchParams)
       if (fallback) {
-        const response = ok(fallback.data, fallback.status || 200)
-        response.headers.set('X-Data-Source', 'prototype_fallback')
-        return response
+        return ok(fallback.data, fallback.status || 200)
       }
     }
-    return ok({ error: 'Internal server error', detail: String(error?.message || error) }, 500)
+    return ok({ error: 'Internal server error' }, 500)
   }
 }
 

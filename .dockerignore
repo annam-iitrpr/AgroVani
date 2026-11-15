@@ -9,3 +9,5 @@ node_modules
 npm-debug.log*
 *.pem
 model/*.joblib
+data/*.csv
+ml/saved_models/*.joblib

@@ -1,6 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { farmCreateSchema, farmCropCycleSchema, listingCreateSchema, orderCreateSchema, residuePlanSchema } from '../contracts/src/api.js'
+import {
+  farmCreateSchema,
+  farmCropCycleSchema,
+  listingCreateSchema,
+  orderCreateSchema,
+  residuePickupSchema,
+  residuePlanSchema,
+} from '../contracts/src/api.js'
 
 test('farm contract rejects invalid coordinates and area', () => {
   const result = farmCreateSchema.safeParse({ areaInAcres: 0, latitude: 100, longitude: 76 })
@@ -36,4 +43,22 @@ test('order contract requires a positive integer quantity', () => {
 test('residue plan contract requires a farm and bounds notes', () => {
   assert.equal(residuePlanSchema.safeParse({ farmId: 'farm-1', notes: 'Keep dry' }).success, true)
   assert.equal(residuePlanSchema.safeParse({ farmId: '', notes: 'x'.repeat(2001) }).success, false)
+})
+
+test('residue pickup contract validates positive tonnage and a calendar date', () => {
+  const valid = residuePickupSchema.safeParse({
+    farmId: 'farm-1',
+    residueType: 'Paddy straw',
+    quantityQuintals: '4.5',
+    pickupDate: '2026-11-20',
+    notes: 'Call before arrival',
+  })
+  const invalid = residuePickupSchema.safeParse({
+    farmId: 'farm-1',
+    residueType: 'Paddy straw',
+    quantityQuintals: 0,
+    pickupDate: 'not-a-date',
+  })
+  assert.equal(valid.success, true)
+  assert.equal(invalid.success, false)
 })
