@@ -19,6 +19,7 @@ import SupportDock from '@/components/SupportDock'
 import {
   Wheat, FlaskConical, ArrowLeft, TrendingUp, Sun, Moon, Snowflake,
   Droplets, Sparkles, Clock, Mic, Camera, IndianRupee, AlertTriangle, Loader2, X,
+  Truck, MapPin, PackageCheck, CalendarDays, RefreshCw,
 } from 'lucide-react'
 
 class DebugBoundary extends React.Component {
@@ -68,6 +69,19 @@ export default function App() {
   const [machinery, setMachinery] = useState([])
   const [loading, setLoading] = useState(false)
   const [marketplaceListings, setMarketplaceListings] = useState([])
+  const [logisticsOrders, setLogisticsOrders] = useState([])
+  const [logisticsBookings, setLogisticsBookings] = useState([])
+  const [residuePickups, setResiduePickups] = useState([])
+  const [logisticsLoading, setLogisticsLoading] = useState(false)
+  const [logisticsError, setLogisticsError] = useState('')
+  const [pickupSaving, setPickupSaving] = useState(false)
+  const [pickupMessage, setPickupMessage] = useState('')
+  const [pickupDraft, setPickupDraft] = useState({
+    residueType: 'Paddy straw',
+    quantityQuintals: '',
+    pickupDate: new Date().toISOString().slice(0, 10),
+    notes: '',
+  })
   const [buyerNotifications, setBuyerNotifications] = useState([])
   const [priceLock, setPriceLock] = useState(null)
   const [residueProfile, setResidueProfile] = useState({ residueType: 'Paddy straw', qualityGrade: 'Standard', quantityQuintals: '', moisturePercent: '', packaging: 'Loose', pickupReadyDate: '', notes: '' })
@@ -90,11 +104,6 @@ export default function App() {
   const [listening, setListening] = useState(false)
   const [voiceMode, setVoiceMode] = useState('idle')
   const [cameraFile, setCameraFile] = useState(null)
-  const liveDispatch = [
-    { name: 'Sandeep', eta: '5 min', load: '12.4 qtl', status: 'Pickup in progress' },
-    { name: 'Harpreet', eta: '11 min', load: '8.8 qtl', status: 'Residue buyer route' },
-    { name: 'Balwan', eta: '18 min', load: '7.3 qtl', status: 'Seed drop en route' },
-  ]
   const [cameraPreview, setCameraPreview] = useState('')
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraError, setCameraError] = useState('')
@@ -109,6 +118,74 @@ export default function App() {
   const { locale, t } = useLanguage()
   const copy = t.dashboard
   const recommendationCopy = getRecommendationCopy(locale)
+
+  const refreshLogistics = useCallback(async () => {
+    if (!farm?.id) {
+      setLogisticsOrders([])
+      setLogisticsBookings([])
+      setResiduePickups([])
+      return
+    }
+    setLogisticsLoading(true)
+    setLogisticsError('')
+    try {
+      const params = `farmId=${encodeURIComponent(farm.id)}`
+      const [ordersResponse, bookingsResponse, pickupsResponse] = await Promise.all([
+        fetch(apiUrl(`/api/marketplace/orders?${params}`)),
+        fetch(apiUrl(`/api/bookings?${params}`)),
+        fetch(apiUrl(`/api/residue/pickups?${params}`)),
+      ])
+      const [orders, bookings, pickups] = await Promise.all([
+        ordersResponse.json(),
+        bookingsResponse.json(),
+        pickupsResponse.json(),
+      ])
+      if (!ordersResponse.ok || !Array.isArray(orders)) {
+        throw new Error(orders.error || 'Unable to load delivery updates')
+      }
+      if (!bookingsResponse.ok || !Array.isArray(bookings)) {
+        throw new Error(bookings.error || 'Unable to load machinery bookings')
+      }
+      if (!pickupsResponse.ok || !Array.isArray(pickups)) {
+        throw new Error(pickups.error || 'Unable to load pickup schedules')
+      }
+      setLogisticsOrders(orders)
+      setLogisticsBookings(bookings)
+      setResiduePickups(pickups)
+    } catch (error) {
+      setLogisticsError(error.message || 'Logistics updates are unavailable')
+    } finally {
+      setLogisticsLoading(false)
+    }
+  }, [farm?.id])
+
+  async function scheduleResiduePickup(event) {
+    event.preventDefault()
+    if (!farm) return
+    setPickupSaving(true)
+    setPickupMessage('')
+    setLogisticsError('')
+    try {
+      const response = await fetch(apiUrl('/api/residue/pickups'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...pickupDraft,
+          farmId: farm.id,
+          quantityQuintals: Number(pickupDraft.quantityQuintals),
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to schedule residue pickup')
+      setResiduePickups((current) => [data, ...current])
+      setPickupDraft((current) => ({ ...current, notes: '' }))
+      setPickupMessage('Pickup request scheduled. Drivers can now accept it.')
+    } catch (error) {
+      setLogisticsError(error.message || 'Unable to schedule residue pickup')
+    } finally {
+      setPickupSaving(false)
+    }
+  }
 
   function localizedProductName(product) {
     if (product === 'No stress product needed') return recommendationCopy.noStress
@@ -356,6 +433,7 @@ export default function App() {
     const p = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null
     if (p === 'crop') setTab('crop')
     if (p === 'residue') setTab('residue')
+    if (p === 'logistics') setTab('logistics')
 
     async function loadFarms() {
       try {
@@ -374,6 +452,12 @@ export default function App() {
     }
     loadFarms()
   }, [])
+
+  useEffect(() => {
+    refreshLogistics()
+    const intervalId = window.setInterval(refreshLogistics, 30000)
+    return () => window.clearInterval(intervalId)
+  }, [refreshLogistics])
 
   useEffect(() => {
     if (!farm) return
@@ -518,6 +602,7 @@ export default function App() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Unable to place order')
+      setLogisticsOrders((current) => [data, ...current])
       const grossTotal = Number(data.totalInr || payload.totalInr)
       const incentive = agriLoop?.incentive || {}
       const incentiveAmount = Math.round(grossTotal * (Number(incentive.incentivePct || 12) / 100))
@@ -662,9 +747,14 @@ export default function App() {
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center">
               <div className="inline-flex rounded-full border border-white/80 bg-white/70 p-1 shadow-[0_8px_20px_rgba(0,0,0,0.05)] backdrop-blur-md">
-                <Link href="/farmer/operations" className="flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-900"><Wheat className="h-4 w-4" /> Operations</Link>
-                <button onClick={() => setTab('crop')} className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition ${tab === 'crop' ? 'bg-[#006a42] text-white shadow-md shadow-emerald-600/20' : 'text-slate-600 hover:text-slate-900'}`}>
-                  <FlaskConical className="h-4 w-4" /> Live Weather
+                <button onClick={() => setTab('crop')} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition ${tab === 'crop' ? 'bg-[#006a42] text-white shadow-md shadow-emerald-600/20' : 'text-slate-600 hover:text-slate-900'}`}>
+                  <FlaskConical className="h-4 w-4" /> Live weather
+                </button>
+                <button onClick={() => setTab('residue')} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition ${tab === 'residue' ? 'bg-[#006a42] text-white shadow-md shadow-emerald-600/20' : 'text-slate-600 hover:text-slate-900'}`}>
+                  <Wheat className="h-4 w-4" /> Residue
+                </button>
+                <button onClick={() => setTab('logistics')} className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition ${tab === 'logistics' ? 'bg-[#006a42] text-white shadow-md shadow-emerald-600/20' : 'text-slate-600 hover:text-slate-900'}`}>
+                  <Truck className="h-4 w-4" /> Logistics
                 </button>
               </div>
 
@@ -950,37 +1040,150 @@ export default function App() {
                 <div className="mt-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">Live Tracking</p>
-                      <h4 className="mt-2 text-2xl font-bold text-slate-900">Residue collection in progress</h4>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">Farm logistics</p>
+                      <h4 className="mt-2 text-2xl font-bold text-slate-900">Delivery updates and bookings</h4>
+                      <p className="mt-2 text-sm text-slate-600">View order progress and machinery bookings from your logistics tab.</p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">12 active</span>
-                      <Link href="/driver/route" className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-700">Open route</Link>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-3 lg:grid-cols-3">
-                    {liveDispatch.map((driver) => (
-                      <div key={driver.name} className="driver-card rounded-[20px] border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-base font-semibold text-slate-900">{driver.name}</p>
-                            <p className="text-xs text-slate-500">{driver.status}</p>
-                          </div>
-                          <span className="h-3 w-3 rounded-full bg-emerald-500 shadow-[0_0_0_5px_rgba(16,185,129,0.12)]" />
-                        </div>
-                        <div className="mt-4 rounded-2xl bg-white p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">ETA</p>
-                          <p className="mt-2 text-xl font-bold text-emerald-600">{driver.eta}</p>
-                          <p className="mt-1 text-sm text-slate-600">Load: {driver.load}</p>
-                        </div>
-                      </div>
-                    ))}
+                    <button type="button" onClick={() => setTab('logistics')} className="shrink-0 rounded-full bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-slate-700">Open logistics</button>
                   </div>
                 </div>
               </div>
 
             </div>
+          )}
+
+          {tab === 'logistics' && (
+            <section className="space-y-6">
+              <div className="flex flex-wrap items-end justify-between gap-4 rounded-[28px] border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-sky-50 p-6 shadow-sm">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-700">Farm deliveries</p>
+                  <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Logistics</h2>
+                  <p className="mt-2 text-sm text-slate-600">Track purchases, delivery progress, and machinery bookings for this farm.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={refreshLogistics}
+                  disabled={logisticsLoading}
+                  className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-4 w-4 ${logisticsLoading ? 'animate-spin' : ''}`} />
+                  Refresh updates
+                </button>
+              </div>
+
+              {logisticsError && <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{logisticsError}</p>}
+
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  { label: 'Orders', value: logisticsOrders.length, icon: PackageCheck },
+                  { label: 'In progress', value: logisticsOrders.filter((order) => order.status !== 'delivered').length, icon: Truck },
+                  { label: 'Machinery bookings', value: logisticsBookings.length, icon: CalendarDays },
+                  { label: 'Residue pickups', value: residuePickups.length, icon: MapPin },
+                ].map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="rounded-[24px] border border-white/80 bg-white/80 p-5 shadow-sm">
+                    <div className="flex items-center gap-3 text-emerald-700"><Icon className="h-5 w-5" /><span className="text-sm font-semibold">{label}</span></div>
+                    <p className="mt-3 text-3xl font-bold text-slate-900">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+                <form onSubmit={scheduleResiduePickup} className="rounded-[28px] border border-emerald-100 bg-white/90 p-6 shadow-sm">
+                  <div className="flex items-center gap-2"><Truck className="h-5 w-5 text-emerald-700" /><h3 className="text-xl font-bold text-slate-900">Schedule residue pickup</h3></div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">Share a pickup request with available drivers. You can track assignment and completion here.</p>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-semibold text-slate-700">Residue type
+                      <input required maxLength={80} value={pickupDraft.residueType} onChange={(event) => setPickupDraft((current) => ({ ...current, residueType: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-700">Quantity (quintals)
+                      <input required type="number" min="0.1" step="0.1" value={pickupDraft.quantityQuintals} onChange={(event) => setPickupDraft((current) => ({ ...current, quantityQuintals: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-700 sm:col-span-2">Preferred pickup date
+                      <input required type="date" min={new Date().toISOString().slice(0, 10)} value={pickupDraft.pickupDate} onChange={(event) => setPickupDraft((current) => ({ ...current, pickupDate: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-700 sm:col-span-2">Notes for driver
+                      <textarea maxLength={2000} rows={2} value={pickupDraft.notes} onChange={(event) => setPickupDraft((current) => ({ ...current, notes: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" placeholder={`Pickup near ${farm?.village || farm?.district || 'your farm'}`} />
+                    </label>
+                  </div>
+                  {pickupMessage && <p role="status" className="mt-3 text-sm font-medium text-emerald-700">{pickupMessage}</p>}
+                  <button type="submit" disabled={pickupSaving || !farm} className="pill-dark mt-4 w-full disabled:opacity-60">{pickupSaving ? 'Scheduling…' : 'Request driver pickup'}</button>
+                </form>
+
+                <section className="rounded-[28px] border border-white/80 bg-white/90 p-6 shadow-sm">
+                  <h3 className="text-xl font-bold text-slate-900">Pickup schedule</h3>
+                  <p className="mt-1 text-sm text-slate-600">Driver assignment and collection status.</p>
+                  <div className="mt-4 space-y-3">
+                    {residuePickups.length ? residuePickups.map((pickup) => (
+                      <article key={pickup.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900">{pickup.residueType} · {Number(pickup.quantityQuintals).toLocaleString('en-IN')} quintals</p>
+                            <p className="mt-1 text-sm text-slate-600">{pickup.district || farm?.district} · {new Date(`${pickup.pickupDate}T00:00:00`).toLocaleDateString('en-IN')}</p>
+                            {pickup.notes && <p className="mt-2 text-xs text-slate-500">{pickup.notes}</p>}
+                          </div>
+                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${pickup.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : pickup.status === 'assigned' ? 'bg-violet-100 text-violet-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {pickup.status === 'completed' ? 'Collected' : pickup.status === 'assigned' ? 'Driver assigned' : 'Awaiting driver'}
+                          </span>
+                        </div>
+                      </article>
+                    )) : <p className="rounded-2xl border border-dashed border-slate-200 p-5 text-sm text-slate-600">{logisticsLoading ? 'Loading pickup requests…' : 'No residue pickups scheduled for this farm.'}</p>}
+                  </div>
+                </section>
+              </div>
+
+              <div className="rounded-[28px] border border-white/80 bg-white/80 p-6 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div><h3 className="text-xl font-bold text-slate-900">Delivery updates</h3><p className="mt-1 text-sm text-slate-600">Status refreshes automatically every 30 seconds.</p></div>
+                  {logisticsLoading && <span className="text-xs font-medium text-slate-500">Updating…</span>}
+                </div>
+                <div className="mt-5 space-y-4">
+                  {logisticsOrders.length ? logisticsOrders.map((order) => {
+                    const stages = ['new', 'packed', 'out_for_delivery', 'delivered']
+                    const stageIndex = Math.max(0, stages.indexOf(order.status))
+                    const statusLabels = { new: 'Order received', packed: 'Preparing', out_for_delivery: 'On the way', delivered: 'Delivered' }
+                    return (
+                      <article key={order.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <h4 className="font-bold text-slate-900">{order.listingName || 'Farm order'}</h4>
+                            <p className="mt-1 text-sm text-slate-600">From {order.sellerName || 'your seller'} · {order.quantity} unit{order.quantity === 1 ? '' : 's'}</p>
+                          </div>
+                          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">{statusLabels[order.status] || 'Order received'}</span>
+                        </div>
+                        <div className="mt-5 grid grid-cols-4 gap-2" aria-label="Delivery progress">
+                          {stages.map((stage, index) => (
+                            <div key={stage}>
+                              <div className={`h-1.5 rounded-full ${index <= stageIndex ? 'bg-emerald-500' : 'bg-slate-200'}`} />
+                              <p className={`mt-2 text-[10px] font-semibold ${index <= stageIndex ? 'text-emerald-800' : 'text-slate-400'}`}>{statusLabels[stage]}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600">
+                          {order.pickupDistrict && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{order.pickupDistrict}</span>}
+                          {order.expectedDeliveryAt && <span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />Expected {new Date(order.expectedDeliveryAt).toLocaleDateString('en-IN')}</span>}
+                        </div>
+                      </article>
+                    )
+                  }) : (
+                    <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+                      {logisticsLoading ? 'Loading your deliveries…' : 'No deliveries for this farm yet. Your order updates will appear here.'}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-white/80 bg-white/80 p-6 shadow-sm">
+                <div className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-emerald-700" /><h3 className="text-xl font-bold text-slate-900">Machinery bookings</h3></div>
+                <div className="mt-4 divide-y divide-slate-100">
+                  {logisticsBookings.length ? logisticsBookings.map((booking) => (
+                    <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 py-4">
+                      <div><p className="font-semibold text-slate-900">{booking.machineryType || 'Machinery service'}</p><p className="mt-1 text-sm text-slate-600">{booking.provider || 'Local provider'} · {booking.date || 'Date pending'}</p></div>
+                      <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold capitalize text-sky-800">{String(booking.status || 'requested').replaceAll('_', ' ')}</span>
+                    </div>
+                  )) : <p className="py-4 text-sm text-slate-600">No machinery bookings for this farm yet.</p>}
+                </div>
+              </div>
+            </section>
           )}
 
           {tab === 'crop' && (

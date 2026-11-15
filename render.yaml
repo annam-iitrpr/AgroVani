@@ -128,6 +128,19 @@ services:
     startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
     healthCheckPath: /
 
+  - type: web
+    name: agrosaathi-matching-api
+    runtime: python
+    rootDir: .
+    buildCommand: python -m pip install -r requirements.txt && python data/generate_synthetic_data.py && python ml/train_model.py
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.13
+      - key: MATCH_API_KEY
+        generateValue: true
+
   - type: redis
     name: agrosaathi-redis
     plan: free

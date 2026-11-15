@@ -15,6 +15,7 @@ function createMemoryCollection(initialRows = []) {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       return Object.entries(value).every(([nestedKey, nestedValue]) => row[key]?.[nestedKey] === nestedValue)
     }
+    if (value === null && row[key] === undefined) return true
     return row[key] === value
   })
 

@@ -9,6 +9,7 @@ import { apiUrl } from '@/lib/api'
 import SupportDock from '@/components/SupportDock'
 
 export default function SellerDashboard() {
+  const [tab, setTab] = useState('overview')
   const [listings, setListings] = useState([])
   const [orders, setOrders] = useState([])
   const [notifications, setNotifications] = useState([])
@@ -16,6 +17,7 @@ export default function SellerDashboard() {
   const [seedPriceSnapshot, setSeedPriceSnapshot] = useState(null)
   const [sellerId, setSellerId] = useState('seller@agrovani.in')
   const [loading, setLoading] = useState(true)
+  const [updatingOrderId, setUpdatingOrderId] = useState('')
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
@@ -28,7 +30,6 @@ export default function SellerDashboard() {
   const delivered = orders.length ? Math.round((orders.filter((order) => order.status === 'delivered').length / orders.length) * 100) : 0
   const activeOrders = orders.filter((order) => order.status !== 'delivered')
   const pendingPickup = orders.filter((order) => ['new', 'packed'].includes(order.status)).length
-  const statusOrder = ['new', 'packed', 'out_for_delivery', 'delivered']
   const orderProgress = useMemo(() => {
     const total = orders.length || 1
     return {
@@ -70,22 +71,38 @@ export default function SellerDashboard() {
       })
       .catch((loadError) => setError(loadError.message))
       .finally(() => setLoading(false))
+    const refreshOrders = async () => {
+      try {
+        const response = await fetch(apiUrl(`/api/marketplace/orders?sellerId=${encodeURIComponent(currentSeller)}`))
+        const data = await response.json()
+        if (!response.ok || !Array.isArray(data)) throw new Error(data.error || 'Unable to refresh order updates')
+        setOrders(data)
+      } catch (loadError) {
+        setError(loadError.message || 'Unable to refresh order updates')
+      }
+    }
+    const intervalId = window.setInterval(refreshOrders, 15000)
+    return () => window.clearInterval(intervalId)
   }, [])
 
   function addListing(event) {
     event.preventDefault()
     if (!draft.name || !draft.price) return
     fetch(apiUrl('/api/marketplace/listings'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sellerId, name: draft.name, category: draft.category, stockUnits: draft.stock, priceInr: draft.price, residueType: draft.residueType, qualityGrade: draft.qualityGrade, moisturePercent: draft.moisturePercent, quantityQuintals: draft.quantityQuintals, pickupDistrict: draft.pickupDistrict, notes: draft.notes }) })
-      .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to publish listing'); setListings((items) => [data, ...items]); setDraft({ name: '', category: 'Biostimulant', stock: 1, price: '' }); setShowForm(false) })
+      .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to publish listing'); setListings((items) => [data, ...items]); setDraft({ name: '', category: 'Biostimulant', stock: 1, price: '', residueType: '', qualityGrade: '', moisturePercent: '', quantityQuintals: '', pickupDistrict: '', notes: '' }); setShowForm(false) })
       .catch((saveError) => setError(saveError.message))
   }
 
   function advanceOrder(id) {
     const order = orders.find((item) => item.id === id)
-    const nextStatus = order?.status === 'new' ? 'packed' : order?.status === 'packed' ? 'out_for_delivery' : 'delivered'
+    const nextStatus = order?.status === 'new' ? 'packed' : order?.status === 'packed' ? 'out_for_delivery' : null
+    if (!nextStatus) return
+    setError('')
+    setUpdatingOrderId(id)
     fetch(apiUrl('/api/marketplace/orders'), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, status: nextStatus }) })
       .then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to update order'); setOrders((items) => items.map((item) => item.id === id ? data : item)) })
       .catch((updateError) => setError(updateError.message))
+      .finally(() => setUpdatingOrderId(''))
   }
 
   function markNotificationRead(id) {
@@ -125,7 +142,18 @@ export default function SellerDashboard() {
           <LanguageSwitcher />
         </div>
 
-        <div className="grid gap-6 md:grid-cols-4">
+        <div className="mb-6 flex w-fit gap-1 rounded-full border border-white/80 bg-white/70 p-1 shadow-sm" role="tablist" aria-label="Seller workspace">
+          {[
+            { id: 'overview', label: 'Overview' },
+            { id: 'logistics', label: 'Logistics' },
+          ].map(({ id, label }) => (
+            <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`rounded-full px-4 py-2.5 text-sm font-semibold ${tab === id ? 'bg-amber-700 text-white' : 'text-slate-600 hover:bg-white'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className={`${tab === 'overview' ? '' : 'hidden'} grid gap-6 md:grid-cols-4`}>
           <div className="rounded-[28px] border border-white/80 bg-white/80 p-6 shadow-sm backdrop-blur-md">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
               <Store className="h-6 w-6" />
@@ -150,7 +178,7 @@ export default function SellerDashboard() {
             </div>
             <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">Fulfillment</p>
             <p className="mt-3 text-4xl font-bold text-slate-900">{delivered}%</p>
-            <p className="mt-2 text-sm text-slate-600">On-time shipping rate</p>
+            <p className="mt-2 text-sm text-slate-600">Orders completed</p>
           </div>
 
           <div className="rounded-[28px] border border-white/80 bg-white/80 p-6 shadow-sm backdrop-blur-md">
@@ -165,12 +193,12 @@ export default function SellerDashboard() {
         {loading && <p className="mt-6 text-sm text-slate-600">Loading shared seller data...</p>}
         {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
-        <section className="mt-6 rounded-[24px] border border-amber-200 bg-amber-50/80 p-5">
+        <section className={`${tab === 'overview' ? '' : 'hidden'} mt-6 rounded-[24px] border border-amber-200 bg-amber-50/80 p-5`}>
           <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-amber-800">Demand alerts</p><h2 className="mt-1 text-xl font-bold text-slate-900">Farmer crop updates</h2></div><span className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">{notifications.filter((item) => item.unread).length} unread</span></div>
           <div className="mt-4 divide-y divide-amber-200">{notifications.length ? notifications.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="text-sm font-semibold text-slate-900">{item.title}</p><p className="mt-1 text-sm text-slate-700">{item.message}</p></div>{item.unread && <button type="button" onClick={() => markNotificationRead(item.id)} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Mark read</button>}</div>) : <p className="py-3 text-sm text-slate-600">New matching farmer crop plans will appear here.</p>}</div>
         </section>
 
-        <section className="mt-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+        <section className={`${tab === 'overview' ? '' : 'hidden'} mt-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm`}>
           <div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-emerald-800">Local price intelligence</p><h2 className="mt-1 text-xl font-bold text-slate-900">Compare nearby seed offers</h2></div>
           <form onSubmit={compareSeedPrices} className="mt-4 grid gap-3 sm:grid-cols-3">
             <label className="text-xs font-semibold text-slate-700">Seed or crop<input required value={seedPriceLookup.product} onChange={(event) => setSeedPriceLookup((current) => ({ ...current, product: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm" placeholder="Rice" /></label>
@@ -183,7 +211,7 @@ export default function SellerDashboard() {
           </div>}
         </section>
 
-        <section className="mt-6 rounded-[28px] border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-amber-50 p-6 shadow-sm">
+        <section className={`${tab === 'overview' ? '' : 'hidden'} mt-6 rounded-[28px] border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-amber-50 p-6 shadow-sm`}>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-700">Primary marketplace</p><h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Featured Seeds</h2><p className="mt-2 text-sm text-slate-600">Make quality seed the first choice for every sowing season.</p></div>
             <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">6 seed types</span>
@@ -198,7 +226,7 @@ export default function SellerDashboard() {
           </div>
         </section>
 
-        <section className="mt-6 rounded-[28px] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur-md">
+        <section className={`${tab === 'overview' ? '' : 'hidden'} mt-6 rounded-[28px] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur-md`}>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div><p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">Catalog</p><h2 className="mt-2 text-2xl font-bold text-slate-900">Manage listings</h2></div>
             <button onClick={() => setShowForm((value) => !value)} className="pill-dark"><Plus className="mr-2 h-4 w-4" /> Add listing</button>
@@ -208,8 +236,8 @@ export default function SellerDashboard() {
           <div className="mt-4 divide-y divide-slate-200/70">{filteredListings.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-4"><div><p className="font-semibold text-slate-900">{item.name}</p><p className="text-xs text-slate-500">{item.category} · ₹{Number(item.priceInr).toLocaleString('en-IN')}</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.stockUnits < 50 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{item.stockUnits} in stock</span></div>)}</div>
         </section>
 
-        <section className="mt-6 rounded-[28px] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur-md">
-          <div className="flex items-center gap-2"><Truck className="h-5 w-5 text-sky-600" /><h2 className="text-2xl font-bold text-slate-900">Residue order pipeline</h2></div>
+        <section className={`${tab === 'logistics' ? '' : 'hidden'} mt-6 rounded-[28px] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur-md`}>
+          <div className="flex items-center gap-2"><Truck className="h-5 w-5 text-sky-600" /><h2 className="text-2xl font-bold text-slate-900">Order fulfillment</h2></div>
           <div className="mt-5 grid gap-3 md:grid-cols-4">
             {Object.entries(orderProgress).map(([state, percent]) => (
               <div key={state} className="rounded-2xl border border-slate-200 bg-white/80 p-4">
@@ -228,18 +256,30 @@ export default function SellerDashboard() {
             {activeOrders.length ? activeOrders.map((order) => (
               <div key={order.id} className="flex flex-col gap-3 rounded-2xl bg-white/80 p-4 shadow-sm md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="font-semibold text-slate-900">{order.id}</p>
-                  <p className="text-sm text-slate-500">Quantity {order.quantity} · ₹{Number(order.totalInr).toLocaleString('en-IN')}</p>
+                  <p className="font-semibold text-slate-900">{order.listingName || 'Marketplace order'}</p>
+                  <p className="text-sm text-slate-500">{order.buyerName || 'Farmer'} · {order.quantity} unit{order.quantity === 1 ? '' : 's'} · ₹{Number(order.totalInr).toLocaleString('en-IN')}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Pickup: {order.pickupDistrict || 'District not set'} · {order.driverAssigned ? 'Driver accepted' : order.status === 'out_for_delivery' ? 'Waiting for driver' : 'Not dispatched'}
+                    {order.expectedDeliveryAt ? ` · ETA ${new Date(order.expectedDeliveryAt).toLocaleDateString('en-IN')}` : ''}
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-3">
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[order.status] || 'bg-slate-100 text-slate-700'}`}>
                     {statusLabel[order.status] || order.status}
                   </span>
-                  <button onClick={() => advanceOrder(order.id)} className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white">
-                    <Check className="h-3.5 w-3.5" />
-                    {statusOrder[Math.min(statusOrder.indexOf(order.status) + 1, statusOrder.length - 1)] ? 'Advance status' : 'Completed'}
-                  </button>
+                  {['new', 'packed'].includes(order.status) ? (
+                    <button
+                      onClick={() => advanceOrder(order.id)}
+                      disabled={updatingOrderId === order.id}
+                      className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      {updatingOrderId === order.id ? 'Saving…' : order.status === 'new' ? 'Mark packed' : 'Send to driver'}
+                    </button>
+                  ) : order.status === 'out_for_delivery' ? (
+                    <span className="text-xs font-medium text-slate-600">{order.driverAssigned ? 'Driver assigned' : 'Waiting for a driver'}</span>
+                  ) : null}
                 </div>
               </div>
             )) : (

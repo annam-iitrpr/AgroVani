@@ -64,6 +64,7 @@ export const orderCreateSchema = z.object({
   sellerId: z.string().trim().min(1),
   buyerId: z.string().trim().min(1).nullable().optional(),
   farmId: z.string().trim().min(1).nullable().optional(),
+  buyerName: z.string().trim().max(120).optional(),
   sellerName: z.string().trim().optional(),
   sellerState: z.string().trim().optional(),
   sellerPlace: z.string().trim().optional(),
@@ -75,6 +76,14 @@ export const orderCreateSchema = z.object({
 export const residuePlanSchema = z.object({
   farmId: z.string().trim().min(1),
   requestedDate: z.string().trim().optional(),
+  notes: z.string().trim().max(2000).optional(),
+})
+
+export const residuePickupSchema = z.object({
+  farmId: z.string().trim().min(1),
+  residueType: z.string().trim().min(1).max(80),
+  quantityQuintals: finiteNumber.positive(),
+  pickupDate: z.string().date(),
   notes: z.string().trim().max(2000).optional(),
 })
 

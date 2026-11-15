@@ -57,6 +57,8 @@ __pycache__/
 *pyc*
 venv/
 .venv/
+data/*.csv
+ml/saved_models/*.joblib
 
 # Development tools
 chainlit.md

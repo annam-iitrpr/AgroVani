@@ -98,6 +98,11 @@ create table if not exists public.marketplace_orders (
   listing_id uuid references public.marketplace_listings(id) on delete set null,
   farm_id uuid references public.farms(id) on delete set null,
   buyer_id text,
+  buyer_name text,
+  farm_name text,
+  pickup_district text default '',
+  delivery_district text default '',
+  driver_id text,
   seller_id text not null,
   seller_name text,
   seller_state text,
@@ -157,6 +162,11 @@ alter table public.marketplace_orders add column if not exists seller_place text
 alter table public.marketplace_orders add column if not exists listing_name text;
 alter table public.marketplace_orders add column if not exists expected_delivery_days integer not null default 7;
 alter table public.marketplace_orders add column if not exists expected_delivery_at timestamptz;
+alter table public.marketplace_orders add column if not exists buyer_name text;
+alter table public.marketplace_orders add column if not exists farm_name text;
+alter table public.marketplace_orders add column if not exists pickup_district text not null default '';
+alter table public.marketplace_orders add column if not exists delivery_district text not null default '';
+alter table public.marketplace_orders add column if not exists driver_id text;
 create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
   owner_id text not null,
@@ -248,6 +258,21 @@ create table if not exists public.residue_operations (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.residue_pickups (
+  id uuid primary key default gen_random_uuid(),
+  farm_id uuid not null references public.farms(id) on delete cascade,
+  farmer_name text not null,
+  district text not null default '',
+  residue_type text not null,
+  quantity_quintals numeric not null check (quantity_quintals > 0),
+  pickup_date date not null,
+  notes text not null default '',
+  driver_id text,
+  status text not null default 'scheduled',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 alter table public.farms enable row level security;
 alter table public.machinery enable row level security;
 alter table public.district_metrics enable row level security;
@@ -264,3 +289,4 @@ alter table public.dispatch enable row level security;
 alter table public.notifications enable row level security;
 alter table public.residue_profiles enable row level security;
 alter table public.residue_operations enable row level security;
+alter table public.residue_pickups enable row level security;

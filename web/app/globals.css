@@ -51,6 +51,35 @@
   }
 }
 
+.gemini-voice-avatar {
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  background: radial-gradient(circle, #f8fafc 58%, #d1fae5 100%);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+}
+
+.gemini-voice-avatar-mouth {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.gemini-voice-avatar-speaking .gemini-voice-avatar-mouth {
+  animation: gemini-mouth-talk 180ms ease-in-out infinite alternate;
+}
+
+@keyframes gemini-mouth-talk {
+  from { transform: scaleY(0.7); }
+  to { transform: scaleY(2.4); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gemini-voice-avatar-speaking .gemini-voice-avatar-mouth {
+    animation: none;
+    transform: scaleY(1.7);
+  }
+}
+
 @layer components {
   .glass-card {
     position: relative;

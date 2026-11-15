@@ -21,6 +21,7 @@ Create the Vercel project from the repository root and use `vercel.json`. It ins
 ### Optional provider variables
 
 - `GEMINI_API_KEY`, `GEMINI_MODEL`, and `GEMINI_VISION_MODEL`: secondary AI provider and Gemini-backed features.
+- `GEMINI_TTS_MODEL` and `GEMINI_TTS_VOICE`: optional Gemini speech model and prebuilt voice for the animated farmer advisory.
 - `BHASHINI_ASR_ENDPOINT`, `BHASHINI_ASR_INFERENCE_KEY`, `BHASHINI_TTS_ENDPOINT`, and `BHASHINI_TTS_INFERENCE_KEY`: optional Bhashini voice recognition/synthesis; keep inference keys server-only.
 - `YIELD_MODEL_API_URL`: public Render model URL ending in `/predict`.
 - `CLOUD_NEXT_WEATHER_API_URL`, `CLOUD_NEXT_WEATHER_API_KEY`, and optionally `CLOUD_NEXT_WEATHER_API_VERSION`: live weather provider.
@@ -41,7 +42,7 @@ Create the Vercel project from the repository root and use `vercel.json`. It ins
 1. Create a Supabase project and run [`backend/supabase/schema.sql`](../backend/supabase/schema.sql) in its SQL editor.
 2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for the browser client. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for server-side persistence; never expose the service-role key with a `NEXT_PUBLIC_` name.
 3. Add the same server-only values to Render if deploying the API there. Supabase is selected by the server adapter when the URL and service-role key are present; `DATABASE_URL` remains available for Prisma-backed services.
-4. Set `DATABASE_URL` to the Supabase PostgreSQL connection string used by Prisma migrations. Verify `/api/health` returns HTTP 200 with `status: "ok"` and `databaseStatus: "connected"`; production now returns 503 when storage is unavailable or only in prototype memory. Check `X-Persistence-Mode` and, on fallback reads, `X-Data-Source: prototype_fallback`. In-memory writes are volatile; fallback reads are seeded/calculated prototype data and do not claim to persist writes.
+4. Set `DATABASE_URL` to the Supabase PostgreSQL connection string used by Prisma migrations. Verify `/api/health` returns HTTP 200 with `status: "ok"`; production returns 503 when persistent storage is unavailable. The health endpoint intentionally reports readiness without revealing database configuration. In-memory writes are volatile; prototype fallback reads are seeded/calculated data and do not claim to persist writes.
 
 ### Realtime location
 
@@ -67,7 +68,7 @@ curl -fsS -X POST https://YOUR_VERCEL_DOMAIN/api/translate \
 	-d '{"text":"30 kg rice today","sourceLanguage":"en","targetLanguage":"hi"}'
 ```
 
-The health check must return `status: "ok"` and `databaseStatus: "connected"`. The translation check must return non-empty `translatedText`; `mode` identifies `groq`, `gemini`, `provider`, or `fallback`.
+The health check must return `status: "ok"`. The translation check must return non-empty `translatedText`.
 
 ## Render
 

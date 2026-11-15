@@ -6,7 +6,7 @@
       "version": "22"
     }
   },
-  "postCreateCommand": "corepack enable && corepack prepare pnpm@9.12.3 --activate && pnpm install --frozen-lockfile && python -m pip install --upgrade pip && python -m pip install -r requirements.txt",
+  "postCreateCommand": "corepack enable && corepack prepare pnpm@9.12.3 --activate && pnpm install --frozen-lockfile && python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python data/generate_synthetic_data.py && python ml/train_model.py",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -15,10 +15,14 @@
       ]
     }
   },
-  "forwardPorts": [3000, 5000, 8787],
+  "forwardPorts": [3000, 5000, 8000, 8787],
   "portsAttributes": {
     "5000": {
       "label": "AgroVani Yield API",
+      "onAutoForward": "openBrowser"
+    },
+    "8000": {
+      "label": "AgroVani Matching API",
       "onAutoForward": "openBrowser"
     },
     "3000": {

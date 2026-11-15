@@ -105,20 +105,11 @@
 | **Testing & Quality** | Pytest-backed test runs & test ID instrumentation (`lib/constants/testIds`) |
 | **Deployment** | [Vercel](https://vercel.com/) |
 
-### Gemini Live voice agent
+### Gemini voice advisory
 
-The Live Voice Advisory card uses the Next.js app for room tokens and the Python worker for the Gemini Live session. Keep both processes running during local development:
+The farmer dashboard voice advisory records a question in the browser, sends it to the server-side Gemini assistant, and plays Gemini-generated speech beside an animated AgroSaathi character. Set `GEMINI_API_KEY` on the server; optionally set `GEMINI_TTS_MODEL` and `GEMINI_TTS_VOICE` to select the speech model and voice. The text response remains visible if speech generation is unavailable.
 
-```bash
-# Terminal 1
-npm run dev
-
-# Terminal 2
-python -m pip install -r services/voice-agent/requirements.txt
-python services/voice-agent/agent.py dev
-```
-
-Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and `GEMINI_API_KEY` in `.env` or `.env.local`. The worker maps `GEMINI_API_KEY` to `GOOGLE_API_KEY` automatically.
+LiveKit room-token support remains available for clients that use the separate voice-agent worker, but it is not required for the dashboard's animated advisory.
 
 ---
 
@@ -193,3 +184,78 @@ npm install
 cp .env.example .env.local
 npm run dev
 ```
+
+## Agricultural logistics matching engine
+
+The Python matching service uses LightGBM to score farmer/buyer compatibility
+and directional preferences, then runs farmer-proposing, capacity-aware
+deferred acceptance to produce stable assignments. Farmer lots are indivisible;
+each accepted lot must fit within the buyer's remaining tonnage capacity.
+
+### Setup and run
+
+From the repository root, install the Python dependencies into the active
+Codespace environment:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Generate 100 farmers, 25 buyers, and 2,000 historical pairs, then train and
+persist the LightGBM models and feature metadata:
+
+```bash
+python data/generate_synthetic_data.py
+python ml/train_model.py
+```
+
+Start the API after the model artifacts are created:
+
+```bash
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+The API exposes `GET /health`, `POST /score`, and `POST /match`. Both POST
+endpoints accept JSON with `farmers` and `buyers` arrays using the fields
+described in the generator. `/match` returns `matched_pairs`,
+`unmatched_farmers`, and aggregate logistics metrics. Interactive API docs are
+available at `/docs`. Requests that exceed 10,000 farmer/buyer combinations
+are rejected, and an unresolved weighted-capacity blocking cycle returns
+`409 Conflict` instead of an unverified assignment.
+
+Run the end-to-end Python tests with:
+
+```bash
+pytest
+```
+
+By default, synthetic CSVs are written to `data/` and trained artifacts to
+`ml/saved_models/`. Pass `--output-dir` to either script to use a different
+location.
+
+### Local hosting and deployment
+
+Codespaces installs the root Python requirements, generates the local demo data
+and models, and forwards port `8000`. For Docker, start only the matching
+service with:
+
+```bash
+docker compose up --build matching-api
+```
+
+For an ordinary local checkout, generate/train the artifacts once, then start
+Uvicorn with the command above. If you set `MATCH_API_KEY` in `.env`, include
+the corresponding `X-API-Key` header when calling the protected POST routes.
+
+Render is configured as a separate Python web service in `render.yaml`; its
+build trains the demo models before starting Uvicorn, and `/health` is its
+health check. The service generates a `MATCH_API_KEY` in Render. Send it as
+`X-API-Key` on `/score` and `/match`; keep this value in server-side
+configuration and never expose it in browser code. Locally, the key is
+optional unless `MATCH_API_KEY` is set.
+
+The committed generation recipe currently produces **synthetic** labels. The
+model and its validation metrics are for pipeline verification only. Before
+using recommendations for purchasing or logistics decisions, train on
+representative, consented, quality-checked historical transactions and review
+the matching policy with marketplace operators.

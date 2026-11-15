@@ -2,22 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Navigation, MapPinned, Clock3, PackageCheck, AlertCircle, Route, Radio } from 'lucide-react'
+import { ArrowLeft, MapPinned, Radio } from 'lucide-react'
 import dynamic from 'next/dynamic'
+import DispatchQueue from '@/components/driver/DispatchQueue'
 
 const LeafletMap = dynamic(() => import('@/components/farmer/LeafletMap'), {
   ssr: false,
   loading: () => <div className="flex min-h-[300px] items-center justify-center bg-slate-100 text-slate-400">Loading live route map…</div>,
 })
 
-const routeStops = [
-  { name: 'Sukhdev Singh', load: '12.4 qtl', eta: '5 min', status: 'Pickup in progress' },
-  { name: 'Dharamvir Kaur', load: '8.8 qtl', eta: '11 min', status: 'Residue buyer route' },
-  { name: 'Mandeep Singh', load: '7.3 qtl', eta: '18 min', status: 'Seed drop en route' },
-]
-
 export default function DriverRoutePage() {
-  const [routeState, setRouteState] = useState('En route to farmer collection')
   const [isBroadcasting, setIsBroadcasting] = useState(true)
   const [connectionStatus, setConnectionStatus] = useState('Connecting...')
   const [driverLocation, setDriverLocation] = useState(null)
@@ -127,10 +121,14 @@ export default function DriverRoutePage() {
 
             <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-200 bg-white min-h-[360px]">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
-                <span>{routeState}</span>
+                <span>Current device location</span>
                 <span className="flex items-center gap-2 text-xs font-medium text-slate-500"><Radio className="h-3.5 w-3.5" />{connectionStatus}</span>
               </div>
-              <LeafletMap lat={driverLocation?.latitude || 30.3398} lon={driverLocation?.longitude || 76.3869} mode="residue" liveLocation={driverLocation} />
+              {driverLocation?.latitude != null && driverLocation?.longitude != null ? (
+                <LeafletMap lat={driverLocation.latitude} lon={driverLocation.longitude} mode="residue" liveLocation={driverLocation} />
+              ) : (
+                <div className="flex min-h-[300px] items-center justify-center px-6 text-center text-sm text-slate-500">Waiting for GPS. Allow location access to show your position.</div>
+              )}
             </div>
           </div>
 
@@ -155,47 +153,7 @@ export default function DriverRoutePage() {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur-md">
-              <div className="flex items-center gap-2">
-                <Route className="h-5 w-5 text-violet-600" />
-                <h3 className="text-xl font-bold text-slate-900">Sample pickup queue</h3>
-              </div>
-
-              <div className="mt-5 space-y-3">
-                {routeStops.map((stop) => (
-                  <div key={stop.name} className="rounded-[20px] border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-slate-900">{stop.name}</p>
-                        <p className="text-xs text-slate-500">{stop.status}</p>
-                      </div>
-                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">{stop.load}</span>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
-                      <span className="flex items-center gap-2"><Clock3 className="h-4 w-4" /> ETA</span>
-                      <span className="font-semibold text-slate-900">{stop.eta}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-[28px] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur-md">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-amber-600" />
-                <h3 className="text-xl font-bold text-slate-900">Route notes</h3>
-              </div>
-
-              <ul className="mt-5 space-y-3 text-sm text-slate-700">
-                <li className="rounded-2xl bg-amber-50 px-4 py-3 text-amber-800">Road condition: slight delay on village approach road.</li>
-                <li className="rounded-2xl bg-emerald-50 px-4 py-3 text-emerald-800">Residue buyer capacity available at 09:10 slot.</li>
-                <li className="rounded-2xl bg-sky-50 px-4 py-3 text-sky-800">Seed drop confirmed at next delivery hub.</li>
-              </ul>
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <button type="button" onClick={() => setRouteState('Arrived at farmer collection')} className="rounded-2xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-700"><PackageCheck className="mr-2 inline h-4 w-4" /> Mark arrived</button>
-                <button type="button" onClick={() => setRouteState('Navigation refreshed')} className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"><Navigation className="mr-2 inline h-4 w-4" /> Refresh route</button>
-              </div>
-            </div>
+            <DispatchQueue />
           </div>
         </div>
       </div>

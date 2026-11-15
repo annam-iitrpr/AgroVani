@@ -69,9 +69,12 @@ All paths below are relative to the configured API base URL and are currently im
 | GET | `/marketplace/listings` | optional `sellerId` | listing array | 200 |
 | GET | `/marketplace/seed-prices` | `product`, optional `district`, `state` | low/median/high active seed listing asks and observations | 200; asking prices only |
 | POST | `/marketplace/listings` | seller/listing, price, stock, optional residue fields | created listing | 201; 400 contract validation |
-| GET | `/marketplace/orders` | optional `sellerId` or `buyerId` | order array | 200 |
-| POST | `/marketplace/orders` | `{ listingId, sellerId, buyerId, farmId, quantity, totalInr }` | created order | 201; 400/404/409 |
-| PATCH | `/marketplace/orders` | `{ id, status }` | updated order | 200; 400/404 |
+| GET | `/marketplace/orders` | one of `sellerId`, `buyerId`, `farmId`, `driverId`, or `dispatchFor` | audience-specific order details; dispatch view excludes other drivers' assigned deliveries | 200; 400 missing audience |
+| POST | `/marketplace/orders` | `{ listingId, sellerId, buyerId?, farmId?, quantity, totalInr? }` | farmer-safe order receipt | 201; 400/404/409 |
+| PATCH | `/marketplace/orders` | `{ id, status }` for seller packing/dispatch; `{ id, action: "claim", driverId }` or `{ id, status: "delivered", driverId }` for drivers | audience-safe order status | 200; 400/404/409 invalid transition or assignment |
+| GET | `/residue/pickups` | `farmId` or `dispatchFor` | farm pickup schedule or available/assigned driver pickups | 200; 400 missing audience |
+| POST | `/residue/pickups` | `{ farmId, residueType, quantityQuintals, pickupDate, notes? }` | scheduled pickup request | 201; 400 validation; 404 missing farm |
+| PATCH | `/residue/pickups` | `{ id, action: "claim" \| "complete", driverId }` | assigned or completed pickup | 200; 400/404/409 invalid action or assignment |
 | GET | `/notifications` | `audience`, optional `farmId`, `userId` | audience/recipient-scoped notification array | 200 |
 | PATCH | `/notifications` | `{ id }` | read notification | 200; 404 |
 | GET | `/messages` | none | message array | 200 |
